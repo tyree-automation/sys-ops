@@ -21,24 +21,24 @@ Supports Debian/Ubuntu and RHEL-family (Rocky, Alma, Fedora) hosts.
 # 1. Dependencies
 ansible-galaxy collection install -r requirements.yml
 
-# 2. Add a server — interactive: asks name/location/env/role/address,
-#    generates the host ID + asset tag, writes inventory/hosts.yml,
+# 2. Add a server — interactive: asks name/place/region/site/role/address,
+#    generates a CLLI-style host ID + asset tag, writes inventory/hosts.yml,
 #    offers to commit+push and onboard in one go
 scripts/add-server.py
 
 # 3. Onboard it (if you didn't let the script do it)
-ansible-playbook playbooks/onboard.yml -l nyc-prod-web01 \
+ansible-playbook playbooks/onboard.yml -l nycmnydcw01 \
   -e tailscale_authkey=tskey-auth-XXXX
 
 # 4. Routine maintenance (any time / scheduled)
 ansible-playbook playbooks/maintenance.yml
 
 # 5. End of life — queue, wipe (requires confirmation token), drop
-scripts/add-server.py retire nyc-prod-web01
-ansible-playbook playbooks/decommission.yml -l nyc-prod-web01 \
+scripts/add-server.py retire nycmnydcw01
+ansible-playbook playbooks/decommission.yml -l nycmnydcw01 \
   -e decommission_confirm=WIPE \
   -e decommission_revoke_ansible_access=true
-scripts/add-server.py remove nyc-prod-web01
+scripts/add-server.py remove nycmnydcw01
 ```
 
 ## Adding servers
@@ -47,22 +47,45 @@ scripts/add-server.py remove nyc-prod-web01
 an interactive interview, or fully scripted:
 
 ```bash
-scripts/add-server.py add --name web01 --location nyc --env prod \
-  --role web --address 192.0.2.10 --yes [--commit] [--onboard]
+scripts/add-server.py add --name web01 --place NYCM --region NY \
+  --site DC --role web --address 192.0.2.10 --yes [--commit] [--onboard]
 scripts/add-server.py list
 scripts/add-server.py retire <host-id>   # move to the decommission queue
 scripts/add-server.py remove <host-id>   # delete after teardown
 ```
 
-What it generates from your answers:
+### CLLI host IDs
 
-- **Host ID** `<location>-<env>-<name>` (e.g. `nyc-prod-web01`) — editable
-  before writing; becomes the inventory hostname *and* the Tailscale
-  hostname, so the tailnet matches the inventory.
-- **Asset tag** `SYS-XXXXXX` — deterministic hash of name+location+address,
-  handy for labelling hardware that later gets sold off.
-- **Metadata hostvars** (`server_location`, `server_env`, `server_role`,
-  `added_on`) usable in playbook conditionals and audits.
+Host IDs follow a CLLI-style scheme (the telecom **Common Language Location
+Identifier**): 11 characters encoding where and what the machine is.
+
+```
+N Y C M   N Y   D C   W 0 1     →  NYCMNYDCW01 (inventory id: nycmnydcw01)
+└─place─┘ └rgn┘ └site┘ └entity┘
+```
+
+| Field | Size | Meaning | Examples |
+|---|---|---|---|
+| place | 4 letters | city/locality abbreviation | `NYCM` (NY Manhattan), `HSTN` (Houston), `FRNK` (Frankfurt) |
+| region | 2 letters | US state or ISO country | `NY`, `TX`, `DE`, `NL` |
+| site | 2 alnum | building/DC within the place | `DC`, `01`, `AA` |
+| entity | 3 chars | role class letter + sequence | `W01` = web #1, `D03` = db #3 |
+
+Role class letters: `W`=web `D`=db `A`=app `C`=cache `S`=storage
+`N`=network `M`=monitoring `B`=backup `V`=virt `G`=generic (custom roles
+use their first letter). The sequence number is auto-assigned — the next
+free number for that role at that site — and editable before writing.
+
+What you get per host:
+
+- **Host ID** — the lowercase CLLI (e.g. `nycmnydcw01`); also becomes the
+  Tailscale hostname, so the tailnet matches the inventory.
+- **Asset tag** `SYS-XXXXXX` — deterministic hash of CLLI+address, handy
+  for labelling hardware that later gets sold off.
+- **Detailed hostvars** — `clli`, `clli_place`, `clli_region`, `clli_site`,
+  `clli_entity`, `server_name`, `server_env`, `server_role`, `added_on` —
+  usable in playbook conditionals, audits, and reports
+  (`scripts/add-server.py list` shows the fleet by place/region/site).
 
 `inventory/hosts.yml` is committed to git by design so the script's changes
 flow to Semaphore (File-type inventory). If you don't want addresses in git,

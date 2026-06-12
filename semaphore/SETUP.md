@@ -80,7 +80,7 @@ Environment = `fleet-vars`.
 
 Add two required survey variables so every teardown is deliberate:
 
-1. `target_hosts` — the host or group to wipe (e.g. `web-01` or `retiring`)
+1. `target_hosts` — the host or group to wipe (e.g. `nycmnydcw01` or `retiring`)
 2. `decommission_confirm` — must be typed as `WIPE`; the playbook hard-fails
    on anything else
 
