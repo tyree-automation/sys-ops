@@ -2,19 +2,23 @@
 # Deploy the fleet dashboard. Build the dataset first on the control node:
 #   scripts/build-site.py [--probe]
 
+- name: Validate website_mode
+  ansible.builtin.assert:
+    that:
+      - website_mode in ['public', 'internal']
+    fail_msg: "website_mode must be 'public' or 'internal'"
+
 - name: Check that the dashboard dataset has been built
   ansible.builtin.stat:
-    path: "{{ playbook_dir }}/../web/data/fleet.json"
+    path: "{{ playbook_dir }}/../build/fleet-{{ website_mode }}.json"
   delegate_to: localhost
   become: false
-  run_once: true
   register: _website_dataset
 
-- name: Fail if web/data/fleet.json is missing
+- name: Fail if the dataset is missing
   ansible.builtin.fail:
-    msg: "web/data/fleet.json not found — run scripts/build-site.py first."
+    msg: "build/fleet-{{ website_mode }}.json not found — run scripts/build-site.py first."
   when: not _website_dataset.stat.exists
-  run_once: true
 
 - name: Install nginx
   ansible.builtin.package:
@@ -37,6 +41,24 @@
     group: www-data
     mode: "0644"
     directory_mode: "0755"
+
+- name: Create data directory
+  ansible.builtin.file:
+    path: "{{ website_root }}/data"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+# Only the dataset matching website_mode ever leaves the control node —
+# a public host never receives the internal fleet data.
+- name: "Install the {{ website_mode }} dataset"
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../build/fleet-{{ website_mode }}.json"
+    dest: "{{ website_root }}/data/fleet.json"
+    owner: www-data
+    group: www-data
+    mode: "0644"
 
 - name: Install nginx site
   ansible.builtin.template:

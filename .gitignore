@@ -7,3 +7,7 @@ vault_pass*
 .env
 secrets.yml
 __pycache__/
+
+# Generated dashboard datasets (build with scripts/build-site.py)
+build/
+web/data/

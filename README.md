@@ -131,16 +131,28 @@ It's a static site (`web/`) fed by a generated dataset — no backend, no
 API keys. Node positions come from the optional map location asked by
 `scripts/new-node.py` (stored as `site_location` in host_vars).
 
+**Public vs internal.** Every build produces two datasets, and each
+website node serves exactly one (its `website_mode` host var, chosen in
+the new-node script — default `public`):
+
+- `public` — **dn42 information only**: routers, locations, status, dn42
+  addressing, peerings, and the "peer with me" card from the `public:`
+  section of `site.yml`. No environments, SSH addresses, components, or
+  ops commands — that data isn't in the file at all, so a public host
+  physically never receives it.
+- `internal` — the full fleet view. Deploy only on trusted networks
+  (e.g. behind Tailscale).
+
 ```console
-$ scripts/build-site.py            # inventory + site.yml -> web/data/fleet.json
-$ scripts/build-site.py --probe    # also ping nodes to show up/down status
-$ scripts/build-site.py --serve    # preview at http://localhost:8080
-$ ansible-playbook playbooks/website.yml   # deploy to the 'website' group
+$ scripts/build-site.py                  # -> build/fleet-{public,internal}.json
+$ scripts/build-site.py --probe          # also ping nodes for up/down status
+$ scripts/build-site.py --serve          # preview the public site on :8080
+$ scripts/build-site.py --serve --mode internal   # preview the internal site
+$ ansible-playbook playbooks/website.yml # deploy to the 'website' group
 ```
 
-Set `show_addresses: false` in `site.yml` before publishing the dashboard
-anywhere public. Re-run `build-site.py` + `website.yml` whenever the fleet
-changes (a cron/CI job works well).
+Re-run `build-site.py` + `website.yml` whenever the fleet changes (a
+cron/CI job works well).
 
 ## Decommissioning
 

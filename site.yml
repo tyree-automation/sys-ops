@@ -14,10 +14,26 @@ accent: "#7c5cff"
 # Footer line (HTML allowed). {generated} expands to the build timestamp.
 footer: "generated {generated} · powered by sys-ops"
 
-# --- Privacy -------------------------------------------------------------------
-# Show SSH addresses / dn42 IPs in the node drawer. Disable if the dashboard
-# is published somewhere public.
+# --- Visibility ----------------------------------------------------------------
+# scripts/build-site.py always produces two datasets:
+#   build/fleet-internal.json — the full fleet (environments, components,
+#                               SSH addresses, ops commands)
+#   build/fleet-public.json   — dn42 routers ONLY: name, location, status,
+#                               dn42 addressing and peerings. No fleet
+#                               internals, ever.
+# Each website node deploys exactly one of them via its website_mode host
+# var (default: public). Internal data never reaches a public host.
+
+# Show SSH addresses in the INTERNAL dataset's node drawer:
 show_addresses: true
+
+# --- Public peering info ----------------------------------------------------------
+# Shown as a "peer with me" card on the PUBLIC (dn42-only) site.
+# Leave values empty to hide them; leave all empty to hide the card.
+public:
+  asn: ""               # e.g. "AS4242420000"
+  contact: ""           # e.g. "you@example.com / yournick on hackint"
+  policy: ""            # e.g. "Open peering — pick the closest node and email me."
 
 # --- Map -----------------------------------------------------------------------
 map:

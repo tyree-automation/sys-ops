@@ -28,6 +28,7 @@ const state = {
 };
 
 const $ = (sel) => document.querySelector(sel);
+const isPublic = () => state.data.site.mode === "public";
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -74,6 +75,10 @@ function renderHeader() {
   $("#site-tagline").textContent = [site.subtitle, site.tagline].filter(Boolean).join(" · ");
   $("#site-footer").innerHTML = site.footer || "";
 
+  if (isPublic()) {
+    $("#env-filters").innerHTML = "";
+    return;
+  }
   const envs = ["all", "test", "development", "production"];
   $("#env-filters").innerHTML = envs
     .map((env) => {
@@ -98,13 +103,20 @@ function renderHeader() {
 function renderStats() {
   const nodes = visibleNodes();
   const peerings = nodes.reduce((acc, n) => acc + ((n.dn42 || {}).peers || []).length, 0);
-  const stats = [
-    [nodes.length, "nodes"],
-    [nodes.filter((n) => n.status === "up").length, "up"],
-    [nodes.filter((n) => n.components.includes("dn42")).length, "dn42 routers"],
-    [peerings, "dn42 peerings"],
-    [nodes.filter((n) => n.retiring).length, "retiring"],
-  ];
+  const stats = isPublic()
+    ? [
+        [nodes.length, "routers"],
+        [nodes.filter((n) => n.status === "up").length, "up"],
+        [peerings, "peerings"],
+        [new Set(nodes.map((n) => (n.location || {}).label).filter(Boolean)).size, "locations"],
+      ]
+    : [
+        [nodes.length, "nodes"],
+        [nodes.filter((n) => n.status === "up").length, "up"],
+        [nodes.filter((n) => n.components.includes("dn42")).length, "dn42 routers"],
+        [peerings, "dn42 peerings"],
+        [nodes.filter((n) => n.retiring).length, "retiring"],
+      ];
   $("#stats").innerHTML = stats
     .map(([num, lbl], i) =>
       `<div class="stat" style="animation-delay:${i * 60}ms">
@@ -151,11 +163,13 @@ function initMap() {
   state.linkLayer = L.layerGroup().addTo(state.map);
 
   $("#map-legend").innerHTML =
-    Object.entries(ENV_COLORS)
-      .filter(([env]) => env !== "unassigned")
-      .map(([env, color]) =>
-        `<span><span class="legend-dot" style="background:${color}"></span>${env}</span>`)
-      .join("") +
+    (isPublic()
+      ? `<span><span class="legend-dot" style="background:var(--accent)"></span>router</span>`
+      : Object.entries(ENV_COLORS)
+          .filter(([env]) => env !== "unassigned")
+          .map(([env, color]) =>
+            `<span><span class="legend-dot" style="background:${color}"></span>${env}</span>`)
+          .join("")) +
     `<span><span class="legend-dot" style="background:${LINK_COLORS.dn42}"></span>dn42 link</span>`;
 }
 
@@ -201,7 +215,9 @@ function renderMap() {
 
   nodes.forEach((node) => {
     if (!node.location) return;
-    const color = ENV_COLORS[node.environment] || ENV_COLORS.unassigned;
+    const color = isPublic()
+      ? "var(--accent)"
+      : ENV_COLORS[node.environment] || ENV_COLORS.unassigned;
     const icon = L.divIcon({
       className: "",
       iconSize: [22, 22],
@@ -222,6 +238,7 @@ function renderMap() {
 /* --- node grid ------------------------------------------------------------------------- */
 
 function chipsFor(node) {
+  if (isPublic()) return `<span class="chip comp">dn42 router</span>`;
   let html = `<span class="chip env-${esc(node.environment)}">${esc(node.environment)}</span>`;
   node.components.forEach((c) => (html += `<span class="chip comp">${esc(c)}</span>`));
   if (node.retiring) html += `<span class="chip retiring">retiring</span>`;
@@ -243,6 +260,9 @@ function renderNodes() {
            <span class="status-dot status-${esc(node.status)}" title="${esc(node.status)}"></span>
          </div>
          <div class="loc">${esc((node.location || {}).label || "")}</div>
+         ${isPublic() && node.dn42?.ownip
+           ? `<div class="loc" style="font-family:ui-monospace,monospace">${esc(node.dn42.ownip)}</div>`
+           : ""}
          <div>${chipsFor(node)}</div>
        </div>`)
     .join("");
@@ -278,15 +298,16 @@ function renderDn42() {
 
 function openDrawer(node) {
   const dn42 = node.dn42;
-  const kv = [
-    ["status", node.status],
-    ["environment", node.environment],
-    ["components", node.components.join(", ") || "none"],
-  ];
-  if (node.address) kv.push(["address", node.address]);
+  const kv = [["status", node.status]];
+  if (!isPublic()) {
+    kv.push(["environment", node.environment]);
+    kv.push(["components", node.components.join(", ") || "none"]);
+    if (node.address) kv.push(["address", node.address]);
+  }
   if (node.location) kv.push(["location", node.location.label || `${node.location.lat}, ${node.location.lon}`]);
   if (dn42?.ownip) kv.push(["dn42 IPv4", dn42.ownip]);
   if (dn42?.ownip6) kv.push(["dn42 IPv6", dn42.ownip6]);
+  if (dn42?.endpoint) kv.push(["endpoint", dn42.endpoint]);
 
   let html = `
     <h3>${esc(node.name)}</h3>
@@ -304,12 +325,14 @@ function openDrawer(node) {
       : `<div class="empty">none yet — edit host_vars and run playbooks/dn42.yml</div>`;
   }
 
-  html += `<h4>operations</h4>
-    <dl class="kv">
-      <dt>onboard</dt><dd>onboard.yml -l ${esc(node.name)}</dd>
-      <dt>maintain</dt><dd>maintenance.yml -l ${esc(node.name)}</dd>
-      ${dn42 ? `<dt>dn42</dt><dd>dn42.yml -l ${esc(node.name)}</dd>` : ""}
-    </dl>`;
+  if (!isPublic()) {
+    html += `<h4>operations</h4>
+      <dl class="kv">
+        <dt>onboard</dt><dd>onboard.yml -l ${esc(node.name)}</dd>
+        <dt>maintain</dt><dd>maintenance.yml -l ${esc(node.name)}</dd>
+        ${dn42 ? `<dt>dn42</dt><dd>dn42.yml -l ${esc(node.name)}</dd>` : ""}
+      </dl>`;
+  }
 
   $("#drawer-body").innerHTML = html;
   $("#drawer").classList.add("open");
@@ -337,6 +360,19 @@ async function boot() {
 
   const res = await fetch("data/fleet.json", { cache: "no-store" });
   state.data = await res.json();
+
+  const pub = state.data.site.public || {};
+  if (isPublic() && Object.keys(pub).length) {
+    $("#peering-panel").hidden = false;
+    $("#peering-info").innerHTML = [
+      ["ASN", pub.asn],
+      ["contact", pub.contact],
+      ["policy", pub.policy],
+    ]
+      .filter(([, v]) => v)
+      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`)
+      .join("");
+  }
 
   const panels = state.data.site.panels || {};
   if (panels.stats === false) $("#stats").remove();

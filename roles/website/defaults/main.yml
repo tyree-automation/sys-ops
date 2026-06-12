@@ -2,6 +2,12 @@
 # Fleet dashboard deployment (nginx + the static site under web/).
 
 website_root: /var/www/sys-ops-dashboard
+
+# Which dataset this node serves (set per host in host_vars):
+#   public   — dn42 routers only: addressing, peerings, map. Safe to expose.
+#   internal — the full fleet view (environments, SSH addresses, ops
+#              commands). Only for dashboards on trusted networks!
+website_mode: public
 # nginx server_name; "_" answers on any name.
 website_server_name: "_"
 website_listen_port: 80

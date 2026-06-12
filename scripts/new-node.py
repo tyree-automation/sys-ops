@@ -240,6 +240,12 @@ def write_host_vars(node):
         "# --- Components ---",
         f"tailscale_enabled: {'true' if node['tailscale'] else 'false'}",
     ]
+    if node.get("website"):
+        lines += [
+            "# Dashboard flavor served by this node — 'public' (dn42 info only)",
+            "# or 'internal' (full fleet view; trusted networks ONLY).",
+            f"website_mode: {node['website_mode']}",
+        ]
     if node.get("location"):
         loc = node["location"]
         lines += [
@@ -258,6 +264,13 @@ def write_host_vars(node):
             f"dn42_ownip: {node['dn42_ownip']}",
             f"dn42_ownip6: {node['dn42_ownip6']}",
             f"dn42_link_local6: \"{node['dn42_link_local6']}\"",
+        ]
+        if node.get("dn42_public_endpoint"):
+            lines += [
+                "# Endpoint advertised to peers on the public dashboard:",
+                f"dn42_public_endpoint: \"{node['dn42_public_endpoint']}\"",
+            ]
+        lines += [
             "",
             "# Peerings — fill these in, then run: ansible-playbook playbooks/dn42.yml -l "
             + node["name"],
@@ -314,6 +327,16 @@ def main():
     website = ask_yes_no(
         "Serve the fleet web dashboard from this node (nginx)?", default=False
     )
+    website_mode = "public"
+    if website:
+        website_mode = ask_choice(
+            "Which dashboard flavor should this node serve?",
+            ("public", "internal"),
+            {
+                "public": "dn42 info only — safe for the open internet",
+                "internal": "full fleet view — trusted networks ONLY",
+            },
+        )
 
     header("Map location")
     print(dim("  Optional — places the node on the dashboard's world map."))
@@ -337,6 +360,7 @@ def main():
         "tailscale": tailscale,
         "dn42": dn42,
         "website": website,
+        "website_mode": website_mode,
         "location": location,
     }
 
@@ -352,13 +376,21 @@ def main():
         node["dn42_link_local6"] = ask(
             "tunnel link-local IPv6", default="fe80::42", validate=make_ip_validator(6)
         )
+        node["dn42_public_endpoint"] = ask(
+            "public endpoint shown to peers (host/IP, blank to skip)",
+            required=False,
+        )
 
     header("Summary")
     print(f"  node:        {bold(name)}")
     print(f"  ssh:         {ansible_user}@{ansible_host}:{ansible_port}")
     print(f"  environment: {environment}")
     components = [
-        n for n, on in (("tailscale", tailscale), ("dn42", dn42), ("website", website)) if on
+        n for n, on in (
+            ("tailscale", tailscale),
+            ("dn42", dn42),
+            (f"website ({website_mode})", website),
+        ) if on
     ]
     print(f"  components:  {', '.join(components) if components else dim('none')}")
     if dn42:
@@ -394,8 +426,12 @@ def main():
     if website:
         print(yellow("  dashboard checklist:"))
         print("   - customize branding/panels in site.yml (once)")
-        print("   - build the dataset: scripts/build-site.py  (--probe for live status)")
-        print("   - deploy/refresh:    ansible-playbook playbooks/website.yml")
+        if website_mode == "public":
+            print("   - fill in the public peering card under 'public:' in site.yml")
+        print("   - build the datasets: scripts/build-site.py  (--probe for live status)")
+        print("   - deploy/refresh:     ansible-playbook playbooks/website.yml")
+        print(f"   - this node serves the {bold(website_mode)} flavor"
+              + (" (dn42 info only)" if website_mode == "public" else " — trusted networks only!"))
     if tailscale:
         print("   - pass the tailnet key at onboard time:")
         print(dim("       -e tailscale_authkey=tskey-auth-..."))
