@@ -14,4 +14,11 @@ server {
     location /data/ {
         add_header Cache-Control "no-cache";
     }
+{% if 'autopeer' in group_names %}
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:{{ peering_api_port | default(8042) }};
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+{% endif %}
 }

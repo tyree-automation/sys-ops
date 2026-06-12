@@ -165,6 +165,10 @@ template bgp dnpeers {
   };
 }
 
+# Sessions added by the automatic peering API (roles/peering_api) land
+# here; import them with scripts/peering-requests.py to make them managed.
+include "/etc/bird/peers/*.conf";
+
 # --- Peerings (from dn42_peers in host_vars) --------------------------------
 {% for peer in dn42_peers %}
 {% set ifname = 'dn42-' + peer.name %}

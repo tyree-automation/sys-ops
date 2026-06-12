@@ -47,6 +47,40 @@
     <dl class="kv" id="peering-info"></dl>
   </section>
 
+  <section class="panel" id="autopeer-panel" hidden>
+    <h2>request peering</h2>
+    <form id="autopeer-form" autocomplete="off">
+      <div class="form-grid">
+        <label>node
+          <select id="ap-node" required></select>
+        </label>
+        <label>your ASN
+          <input id="ap-asn" required placeholder="4242421234" inputmode="numeric">
+        </label>
+        <label>short name <span class="hint">a-z0-9, max 8</span>
+          <input id="ap-name" placeholder="mynet" maxlength="8" pattern="[a-z0-9]{2,8}">
+        </label>
+        <label>your WireGuard public key
+          <input id="ap-pubkey" required placeholder="base64, 44 chars">
+        </label>
+        <label>your endpoint <span class="hint">host:port, blank = passive</span>
+          <input id="ap-endpoint" placeholder="dn42.example.com:21080">
+        </label>
+        <label>your tunnel IPv6 <span class="hint">link-local</span>
+          <input id="ap-ll6" required placeholder="fe80::1234">
+        </label>
+        <label>contact <span class="hint">email / IRC</span>
+          <input id="ap-contact" maxlength="120">
+        </label>
+        <label class="checkline">
+          <input type="checkbox" id="ap-mpbgp" checked> MP-BGP with extended next hop
+        </label>
+      </div>
+      <button type="submit" class="btn">submit request</button>
+    </form>
+    <div id="autopeer-result" hidden></div>
+  </section>
+
   <section class="panel" id="dn42-panel">
     <h2>dn42 peerings</h2>
     <div class="table-wrap">

@@ -3,10 +3,10 @@
 # (behind its WIPE gate) and runnable standalone:
 #   ansible-playbook playbooks/dn42.yml -l <node> -e dn42_state=absent -e decommission_confirm=WIPE
 
-- name: Find tunnel configs
+- name: Find tunnel configs (managed and auto-peered)
   ansible.builtin.find:
     paths: /etc/wireguard
-    patterns: "dn42-*.conf"
+    patterns: "dn42-*.conf,dn42a-*.conf"
   register: _dn42_teardown_confs
 
 - name: Stop and disable tunnels

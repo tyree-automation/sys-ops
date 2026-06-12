@@ -346,6 +346,70 @@ function closeDrawer() {
   $("#drawer-scrim").classList.remove("show");
 }
 
+/* --- automatic peering form --------------------------------------------------- */
+
+function autopeerNodes() {
+  return state.data.nodes.filter((n) => (n.dn42 || {}).autopeer);
+}
+
+function initAutopeer() {
+  const nodes = autopeerNodes();
+  if (!isPublic() || !nodes.length || !$("#autopeer-panel")) return;
+  $("#autopeer-panel").hidden = false;
+  $("#ap-node").innerHTML = nodes
+    .map((n) => `<option value="${esc(n.name)}">${esc(n.name)}${
+      n.location ? " — " + esc(n.location.label) : ""}</option>`)
+    .join("");
+  $("#autopeer-form").addEventListener("submit", submitPeering);
+}
+
+async function submitPeering(event) {
+  event.preventDefault();
+  const node = autopeerNodes().find((n) => n.name === $("#ap-node").value);
+  const result = $("#autopeer-result");
+  const button = event.target.querySelector("button");
+  const payload = {
+    asn: Number($("#ap-asn").value.trim()),
+    name: $("#ap-name").value.trim() || undefined,
+    wg_pubkey: $("#ap-pubkey").value.trim(),
+    endpoint: $("#ap-endpoint").value.trim(),
+    peer_v6: $("#ap-ll6").value.trim(),
+    contact: $("#ap-contact").value.trim(),
+    mp_bgp: $("#ap-mpbgp").checked,
+  };
+  button.disabled = true;
+  result.hidden = false;
+  result.className = "";
+  result.textContent = "submitting…";
+  try {
+    const res = await fetch(node.dn42.autopeer.replace(/\/$/, "") + "/peering/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    const our = data.our || {};
+    result.className = "ok";
+    result.innerHTML = `
+      <b>${data.status === "applied"
+        ? "✓ peering is live — configure your side:"
+        : "✓ request received (" + esc(data.detail || "pending review") + ") — our side will be:"}</b>
+      <dl class="kv">
+        <dt>request id</dt><dd>${esc(data.id)}</dd>
+        <dt>our ASN</dt><dd>AS${esc(our.asn ?? "")}</dd>
+        <dt>our pubkey</dt><dd>${esc(our.wg_pubkey || "")}</dd>
+        ${our.endpoint ? `<dt>our endpoint</dt><dd>${esc(our.endpoint)}:${esc(our.port ?? "")}</dd>` : ""}
+        <dt>our tunnel IPv6</dt><dd>${esc(our.link_local6 || "")}</dd>
+      </dl>`;
+  } catch (err) {
+    result.className = "err";
+    result.textContent = "request failed: " + err.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 /* --- boot ------------------------------------------------------------------------------------------ */
 
 function renderAll() {
@@ -383,6 +447,7 @@ async function boot() {
   applyAccent(localStorage.getItem("sysops-accent") || state.data.site.accent);
 
   renderHeader();
+  initAutopeer();
   if (panels.map !== false) {
     if (typeof L !== "undefined") {
       initMap();

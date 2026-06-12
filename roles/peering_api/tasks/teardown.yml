@@ -1,0 +1,36 @@
+---
+# Remove the peering API and any auto-applied tunnels.
+
+- name: Stop and disable the API
+  ansible.builtin.systemd_service:
+    name: sys-ops-autopeer
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Find auto-applied tunnels
+  ansible.builtin.find:
+    paths: /etc/wireguard
+    patterns: "dn42a-*.conf"
+  register: _autopeer_tunnels
+
+- name: Stop auto-applied tunnels
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ item.path | basename | regex_replace('\\.conf$', '') }}"
+    state: stopped
+    enabled: false
+  loop: "{{ _autopeer_tunnels.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  failed_when: false
+
+- name: Remove API files, spool and auto-applied configs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ (_autopeer_tunnels.files | map(attribute='path') | list) + [
+      '/etc/systemd/system/sys-ops-autopeer.service',
+      '/usr/local/sbin/sys-ops-autopeer-api',
+      '/etc/sys-ops/autopeer.json',
+      '/var/lib/sys-ops-autopeer'
+    ] }}"

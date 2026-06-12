@@ -30,6 +30,12 @@
           Refusing to decommission {{ inventory_hostname }}.
           Re-run with -e decommission_confirm=WIPE to proceed.
 
+    - name: Remove automatic peering API before base teardown
+      ansible.builtin.include_role:
+        name: peering_api
+        tasks_from: teardown
+      when: "'autopeer' in group_names"
+
     - name: Remove dn42 stack before base teardown
       ansible.builtin.include_role:
         name: dn42

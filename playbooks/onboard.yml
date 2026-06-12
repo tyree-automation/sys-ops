@@ -31,6 +31,8 @@
       when: tailscale_enabled | bool
     - role: dn42
       when: "'dn42' in group_names"
+    - role: peering_api
+      when: "'autopeer' in group_names"
     - role: website
       when: "'website' in group_names"
     - maintenance

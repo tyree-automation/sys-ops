@@ -154,6 +154,40 @@ $ ansible-playbook playbooks/website.yml # deploy to the 'website' group
 Re-run `build-site.py` + `website.yml` whenever the fleet changes (a
 cron/CI job works well).
 
+### Automatic peering (dn42)
+
+Other dn42 operators can request a peering straight from the public
+dashboard — like the auto-peering portals on dn42, but driven by your
+inventory. Opt a dn42 node in via the new-node script (or add it to the
+`autopeer` group) and it runs a small API (`roles/peering_api`, stdlib
+Python, port 8042 — proxied at `/api/` when the node also serves the
+dashboard):
+
+- `GET /api/peering/info` — your ASN, the node's WireGuard public key,
+  endpoint and port scheme
+- `POST /api/peering/request` — strictly validated (dn42 ASN range, key
+  and link-local formats, duplicate/port checks, per-IP and queue rate
+  limits) and checked against a dn42 registry explorer, then queued
+
+Review queued requests from your control machine — approving writes the
+peer into the node's `dn42_peers` (git stays the source of truth) and
+deploys it:
+
+```console
+$ scripts/peering-requests.py list
+$ scripts/peering-requests.py show    lab-01 20260612...-as4242421234
+$ scripts/peering-requests.py approve lab-01 20260612...-as4242421234
+$ scripts/peering-requests.py reject  lab-01 20260612...-as4242421234
+```
+
+**Instant mode:** set `peering_api_auto_apply: true` (host_vars) and
+valid requests are configured live on the spot — tunnel under a separate
+`dn42a-*` prefix plus a BIRD session in `/etc/bird/peers/`, untouched by
+Ansible until you `approve` the request, which migrates it to a managed
+peer. Caveat: the registry check only confirms the ASN exists, not that
+the requester owns it — leave auto-apply off unless you accept that
+(it's reasonable on a test node).
+
 ## Decommissioning
 
 ```console

@@ -45,7 +45,7 @@ BUILD_DIR = os.path.join(REPO_ROOT, "build")
 WEB_ROOT = os.path.join(REPO_ROOT, "web")
 
 ENVIRONMENTS = ("test", "development", "production")
-COMPONENT_GROUPS = ("dn42", "website")
+COMPONENT_GROUPS = ("dn42", "website", "autopeer")
 
 DEMO_NODES = [
     {
@@ -53,7 +53,7 @@ DEMO_NODES = [
         "address": "203.0.113.10", "status": "up", "retiring": False,
         "location": {"lat": 47.606, "lon": -122.332, "label": "Seattle, US"},
         "dn42": {"ownip": "172.20.0.1", "ownip6": "fd00:1234::1",
-                 "endpoint": "sea.dn42.example.com", "peers": [
+                 "endpoint": "sea.dn42.example.com", "autopeer": "/api", "peers": [
             {"name": "alpha", "asn": 4242421234, "endpoint": "alpha.example.com:51820"},
             {"name": "beta", "asn": 4242425678, "endpoint": ""},
         ]},
@@ -63,7 +63,7 @@ DEMO_NODES = [
         "address": "203.0.113.20", "status": "up", "retiring": False,
         "location": {"lat": 35.676, "lon": 139.650, "label": "Tokyo, JP"},
         "dn42": {"ownip": "172.20.0.2", "ownip6": "fd00:1234::2",
-                 "endpoint": "tyo.dn42.example.com", "peers": [
+                 "endpoint": "tyo.dn42.example.com", "autopeer": "", "peers": [
             {"name": "gamma", "asn": 4242429012, "endpoint": "gamma.example.net:21080"},
         ]},
     },
@@ -126,6 +126,10 @@ def collect_nodes():
                 "ownip6": str(host_vars.get("dn42_ownip6", "")),
                 # Public WireGuard endpoint host advertised to peers (optional).
                 "endpoint": str(host_vars.get("dn42_public_endpoint", "")),
+                # Base URL of the automatic peering API (e.g. "/api" when
+                # proxied by the website role, or "http://host:8042/api").
+                "autopeer": str(host_vars.get("dn42_autopeer_url", ""))
+                if "autopeer" in groups else "",
                 "peers": [
                     {
                         "name": str(p.get("name", "?")),

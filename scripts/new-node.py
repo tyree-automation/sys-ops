@@ -27,7 +27,7 @@ HOSTS_FILE = os.path.join(REPO_ROOT, "inventory", "hosts.yml")
 HOST_VARS_DIR = os.path.join(REPO_ROOT, "inventory", "host_vars")
 
 ENVIRONMENTS = ("test", "development", "production")
-COMPONENT_GROUPS = ("dn42", "website")
+COMPONENT_GROUPS = ("dn42", "website", "autopeer")
 LIFECYCLE_GROUPS = ("retiring",)
 
 HOSTS_HEADER = """\
@@ -42,6 +42,7 @@ HOSTS_HEADER = """\
 # Component groups (optional, a node may be in any number):
 #   dn42         — node runs the dn42 router stack (WireGuard + BIRD2)
 #   website      — node serves the fleet dashboard (playbooks/website.yml)
+#   autopeer     — node runs the automatic peering API (needs dn42)
 #
 # Lifecycle groups:
 #   retiring     — queued for playbooks/decommission.yml
@@ -270,6 +271,11 @@ def write_host_vars(node):
                 "# Endpoint advertised to peers on the public dashboard:",
                 f"dn42_public_endpoint: \"{node['dn42_public_endpoint']}\"",
             ]
+        if node.get("autopeer"):
+            lines += [
+                "# Peering API base URL shown on the public dashboard:",
+                f"dn42_autopeer_url: \"{node['dn42_autopeer_url']}\"",
+            ]
         lines += [
             "",
             "# Peerings — fill these in, then run: ansible-playbook playbooks/dn42.yml -l "
@@ -380,6 +386,23 @@ def main():
             "public endpoint shown to peers (host/IP, blank to skip)",
             required=False,
         )
+        print()
+        print(dim("  The automatic peering API lets other dn42 networks request a"))
+        print(dim("  peering via the public dashboard; you review with"))
+        print(dim("  scripts/peering-requests.py (or enable auto-apply later)."))
+        node["autopeer"] = ask_yes_no(
+            "Run the automatic peering API on this node?", default=False
+        )
+        if node["autopeer"]:
+            if website and website_mode == "public":
+                default_url = "/api"
+            elif node["dn42_public_endpoint"]:
+                default_url = f"http://{node['dn42_public_endpoint']}:8042/api"
+            else:
+                default_url = None
+            node["dn42_autopeer_url"] = ask(
+                "peering API URL shown on the dashboard", default=default_url
+            )
 
     header("Summary")
     print(f"  node:        {bold(name)}")
@@ -389,6 +412,7 @@ def main():
         n for n, on in (
             ("tailscale", tailscale),
             ("dn42", dn42),
+            ("autopeer", node.get("autopeer", False)),
             (f"website ({website_mode})", website),
         ) if on
     ]
@@ -408,10 +432,18 @@ def main():
         children["dn42"]["hosts"][name] = None
     if website:
         children["website"]["hosts"][name] = None
+    if node.get("autopeer"):
+        children["autopeer"]["hosts"][name] = None
     save_inventory(inventory)
     host_vars_path = write_host_vars(node)
 
-    groups = [environment] + [g for g, on in (("dn42", dn42), ("website", website)) if on]
+    groups = [environment] + [
+        g for g, on in (
+            ("dn42", dn42),
+            ("autopeer", node.get("autopeer", False)),
+            ("website", website),
+        ) if on
+    ]
     print()
     print(green("✓") + f" inventory/hosts.yml updated ({', '.join(groups)})")
     print(green("✓") + f" {os.path.relpath(host_vars_path, REPO_ROOT)} written")
@@ -423,6 +455,8 @@ def main():
         print(f"   - add peerings under dn42_peers in inventory/host_vars/{name}.yml")
         print("   - onboarding prints the node's WireGuard public key — share it")
         print("     with your peers")
+        if node.get("autopeer"):
+            print("   - review incoming requests: scripts/peering-requests.py list")
     if website:
         print(yellow("  dashboard checklist:"))
         print("   - customize branding/panels in site.yml (once)")

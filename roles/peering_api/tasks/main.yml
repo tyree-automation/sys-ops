@@ -1,0 +1,67 @@
+---
+- name: Preflight — the peering API rides on the dn42 role
+  ansible.builtin.assert:
+    that:
+      - "'dn42' in group_names"
+    fail_msg: >-
+      {{ inventory_hostname }} is in the 'autopeer' group but not in
+      'dn42' — the peering API needs the dn42 router stack.
+
+- name: Create spool directories
+  ansible.builtin.file:
+    path: "/var/lib/sys-ops-autopeer/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop: [pending, applied, approved, rejected]
+
+- name: Create config directory
+  ansible.builtin.file:
+    path: /etc/sys-ops
+    state: directory
+    mode: "0755"
+
+- name: Install API config
+  ansible.builtin.template:
+    src: autopeer.json.j2
+    dest: /etc/sys-ops/autopeer.json
+    mode: "0600"
+  notify: Restart autopeer API
+
+- name: Install API daemon
+  ansible.builtin.copy:
+    src: sys-ops-autopeer-api.py
+    dest: /usr/local/sbin/sys-ops-autopeer-api
+    mode: "0755"
+  notify: Restart autopeer API
+
+- name: Install systemd unit
+  ansible.builtin.template:
+    src: sys-ops-autopeer.service.j2
+    dest: /etc/systemd/system/sys-ops-autopeer.service
+    mode: "0644"
+  notify: Restart autopeer API
+
+- name: Enable and start the API
+  ansible.builtin.systemd_service:
+    name: sys-ops-autopeer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Check whether ufw is present
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: _autopeer_ufw
+  when: peering_api_open_port | bool
+
+- name: Open the API port
+  community.general.ufw:
+    rule: allow
+    port: "{{ peering_api_port | string }}"
+    proto: tcp
+    comment: dn42 autopeer API
+  when:
+    - peering_api_open_port | bool
+    - _autopeer_ufw.stat.exists

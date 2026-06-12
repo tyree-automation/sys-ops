@@ -20,6 +20,13 @@
         name: dn42
       when: dn42_state | default('present') != 'absent'
 
+    - name: Deploy automatic peering API
+      ansible.builtin.include_role:
+        name: peering_api
+      when:
+        - dn42_state | default('present') != 'absent'
+        - "'autopeer' in group_names"
+
     - name: Remove dn42 stack
       when: dn42_state | default('present') == 'absent'
       block:

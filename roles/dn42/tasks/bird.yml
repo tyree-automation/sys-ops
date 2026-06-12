@@ -21,6 +21,24 @@
     - /etc/bird/roa_dn42_v6.conf
   when: dn42_roa_enabled | bool
 
+- name: Create dynamic peers directory
+  ansible.builtin.file:
+    path: /etc/bird/peers
+    state: directory
+    owner: bird
+    group: bird
+    mode: "0755"
+
+- name: Seed dynamic peers placeholder (bird's include glob must match)
+  ansible.builtin.copy:
+    content: |
+      # Reserved for sessions added by the automatic peering API.
+    dest: /etc/bird/peers/000-placeholder.conf
+    force: false
+    owner: bird
+    group: bird
+    mode: "0644"
+
 - name: Render bird.conf
   ansible.builtin.template:
     src: bird.conf.j2

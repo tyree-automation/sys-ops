@@ -347,6 +347,72 @@ td.mono { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 13p
 
 .empty { color: var(--text-dim); font-style: italic; padding: 18px 4px; }
 
+/* --- autopeer form ----------------------------------------------------------- */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 18px;
+  margin-bottom: 16px;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.form-grid .hint { opacity: 0.65; font-size: 11px; }
+
+.form-grid input:not([type="checkbox"]), .form-grid select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 9px 12px;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.form-grid input:focus, .form-grid select:focus { border-color: var(--accent); }
+
+.form-grid .checkline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  padding-bottom: 9px;
+}
+
+.btn {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 9px 22px;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.btn:hover { background: color-mix(in srgb, var(--accent) 40%, transparent); transform: translateY(-1px); }
+.btn:disabled { opacity: 0.5; cursor: wait; }
+
+#autopeer-result {
+  margin-top: 16px;
+  border-radius: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  animation: rise 0.3s ease both;
+}
+
+#autopeer-result.ok { border-color: color-mix(in srgb, var(--up) 60%, transparent); }
+#autopeer-result.err { border-color: color-mix(in srgb, var(--down) 60%, transparent); }
+#autopeer-result .kv { margin: 10px 0 0; }
+
 footer {
   text-align: center;
   color: var(--text-dim);
