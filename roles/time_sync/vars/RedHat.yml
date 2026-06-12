@@ -1,4 +1,0 @@
----
-time_chrony_service: chronyd
-time_chrony_conf: /etc/chrony.conf
-time_chrony_driftfile: /var/lib/chrony/drift
