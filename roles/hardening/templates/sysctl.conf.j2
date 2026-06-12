@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+{% for key, value in (hardening_sysctl_defaults | combine(hardening_sysctl_extra)).items() %}
+{{ key }} = {{ value }}
+{% endfor %}

@@ -1,0 +1,28 @@
+---
+# SSH hardening via /etc/ssh/sshd_config.d/ drop-in.
+security_ssh_hardening: true
+security_ssh_port: 22
+# "no" | "prohibit-password" | "yes"
+security_ssh_permit_root_login: "prohibit-password"
+# WARNING: only set "no" once key-based access is confirmed working.
+security_ssh_password_auth: "no"
+# Forwarding is rarely needed on managed servers; flip per-host if you
+# tunnel through one (e.g. jump hosts need tcp forwarding "yes").
+security_ssh_allow_tcp_forwarding: "no"
+security_ssh_allow_agent_forwarding: "no"
+# Restrict key exchange/ciphers/MACs to modern algorithms (OpenSSH 7.4+).
+# Disable if ancient clients must connect.
+security_ssh_modern_crypto: true
+
+# fail2ban brute-force protection.
+security_fail2ban: true
+security_fail2ban_bantime: "1h"
+security_fail2ban_findtime: "10m"
+security_fail2ban_maxretry: 5
+
+# Firewall: ufw on Debian family, firewalld on RedHat family.
+security_firewall: true
+security_firewall_allowed_tcp_ports:
+  - "{{ security_ssh_port }}"
+security_firewall_allowed_udp_ports:
+  - 41641   # tailscale

@@ -1,0 +1,83 @@
+---
+# ===========================================================================
+# Fleet-wide configuration. Every value here can be overridden per group,
+# per host, or at runtime (Semaphore Variable Groups / survey vars / -e).
+# Role defaults live in roles/*/defaults/main.yml — this file is the place
+# to set your fleet's policy.
+# ===========================================================================
+
+# --- Time / NTP -----------------------------------------------------------
+time_timezone: "Etc/UTC"
+time_ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+  - 2.pool.ntp.org
+  - 3.pool.ntp.org
+
+# --- Base packages installed on every host --------------------------------
+base_packages:
+  - git
+  - curl
+  - wget
+  - vim
+  - htop
+  - tmux
+  - unzip
+  - jq
+  - rsync
+  - ca-certificates
+  - python3
+# Add per-group/per-host extras without redefining the whole list:
+base_extra_packages: []
+base_enable_unattended_upgrades: true
+# Login banner with CLLI / role / env / asset tag.
+base_motd_enabled: true
+# Persistent journal, capped.
+base_journald_max_use: "500M"
+# Swap file: set a size in MB to enable (recommended on small-RAM VPSes).
+base_swap_size_mb: 0
+
+# --- Managed users ---------------------------------------------------------
+# Users created at onboarding and removed at decommission.
+managed_users: []
+#  - name: ops
+#    sudo: true
+#    shell: /bin/bash
+#    ssh_keys:
+#      - "ssh-ed25519 AAAA... ops@laptop"
+
+# --- Security --------------------------------------------------------------
+security_ssh_hardening: true
+security_ssh_permit_root_login: "prohibit-password"
+security_ssh_password_auth: "no"   # ensure key access exists BEFORE enabling!
+security_ssh_port: 22
+security_fail2ban: true
+security_firewall: true
+security_firewall_allowed_tcp_ports:
+  - "{{ security_ssh_port }}"
+security_firewall_allowed_udp_ports:
+  - 41641   # tailscale direct connections
+# Modern-only SSH crypto (OpenSSH 7.4+); disable for ancient clients.
+security_ssh_modern_crypto: true
+
+# --- System hardening (roles/hardening) ------------------------------------
+# Kernel/network sysctls, uncommon module blacklist, core dumps off,
+# unneeded services masked, auditd. Per-section toggles + the full sysctl
+# dict live in roles/hardening/defaults/main.yml; override single keys via:
+# hardening_sysctl_extra: { kernel.sysrq: 1 }
+hardening_sysctl_enabled: true
+hardening_blacklist_enabled: true
+hardening_disable_core_dumps: true
+hardening_auditd: true
+
+# --- Tailscale --------------------------------------------------------------
+tailscale_enabled: true
+# Set the auth key in a Semaphore secret Variable Group or via
+# -e tailscale_authkey=tskey-auth-... — never commit it to git.
+tailscale_authkey: ""
+# Extra flags for `tailscale up`, e.g. "--ssh --advertise-tags=tag:server"
+tailscale_up_args: ""
+
+# --- Maintenance ------------------------------------------------------------
+maintenance_reboot_if_required: false
+maintenance_journal_vacuum_time: "14d"

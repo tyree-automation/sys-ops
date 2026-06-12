@@ -1,0 +1,40 @@
+---
+- name: Check swap file
+  ansible.builtin.stat:
+    path: "{{ base_swap_path }}"
+  register: base_swapfile
+
+- name: Allocate swap file ({{ base_swap_size_mb }}MB)
+  ansible.builtin.command: "fallocate -l {{ base_swap_size_mb }}M {{ base_swap_path }}"
+  when: not base_swapfile.stat.exists
+
+- name: Secure swap file permissions
+  ansible.builtin.file:
+    path: "{{ base_swap_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Format swap file
+  ansible.builtin.command: "mkswap {{ base_swap_path }}"
+  when: not base_swapfile.stat.exists
+
+- name: Register swap in fstab
+  ansible.posix.mount:
+    src: "{{ base_swap_path }}"
+    path: none
+    fstype: swap
+    opts: sw
+    state: present
+
+- name: Enable swap now
+  ansible.builtin.command: "swapon {{ base_swap_path }}"
+  when: not base_swapfile.stat.exists
+
+- name: Set swappiness
+  ansible.posix.sysctl:
+    name: vm.swappiness
+    value: "{{ base_swappiness }}"
+    sysctl_file: /etc/sysctl.d/98-sysops-swap.conf
+    state: present
+    reload: true

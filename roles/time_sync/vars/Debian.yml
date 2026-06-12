@@ -1,0 +1,4 @@
+---
+time_chrony_service: chrony
+time_chrony_conf: /etc/chrony/chrony.conf
+time_chrony_driftfile: /var/lib/chrony/chrony.drift

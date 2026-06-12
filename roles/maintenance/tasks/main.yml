@@ -1,0 +1,93 @@
+---
+# --- Update everything -------------------------------------------------------
+- name: Update all packages (Debian family)
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+  when: ansible_os_family == "Debian"
+
+- name: Update all packages (RedHat family)
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    update_cache: true
+  when: ansible_os_family == "RedHat"
+
+# --- Clean up ----------------------------------------------------------------
+- name: Remove orphaned packages (Debian family)
+  ansible.builtin.apt:
+    autoremove: true
+    purge: true
+  when:
+    - ansible_os_family == "Debian"
+    - maintenance_autoremove | bool
+
+- name: Remove orphaned packages (RedHat family)
+  ansible.builtin.dnf:
+    autoremove: true
+  when:
+    - ansible_os_family == "RedHat"
+    - maintenance_autoremove | bool
+
+- name: Clean package cache (Debian family)
+  ansible.builtin.apt:
+    autoclean: true
+  when:
+    - ansible_os_family == "Debian"
+    - maintenance_clean_cache | bool
+
+- name: Vacuum old journal logs
+  ansible.builtin.command: "journalctl --vacuum-time={{ maintenance_journal_vacuum_time }}"
+  register: maintenance_vacuum
+  changed_when: "'Deleted' in maintenance_vacuum.stderr or 'freed' in maintenance_vacuum.stdout"
+
+# --- Reboot handling ----------------------------------------------------------
+- name: Check whether a reboot is required (Debian family)
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: maintenance_reboot_required_file
+  when: ansible_os_family == "Debian"
+
+- name: Check whether a reboot is required (RedHat family)
+  ansible.builtin.command: dnf needs-restarting -r
+  register: maintenance_needs_restarting
+  changed_when: false
+  failed_when: maintenance_needs_restarting.rc not in [0, 1]
+  when: ansible_os_family == "RedHat"
+
+- name: Determine reboot requirement
+  ansible.builtin.set_fact:
+    maintenance_needs_reboot: >-
+      {{ (maintenance_reboot_required_file.stat.exists | default(false))
+         or (maintenance_needs_restarting.rc | default(0) == 1) }}
+
+- name: Reboot to apply updates
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ maintenance_reboot_timeout }}"
+    msg: "Rebooting for system maintenance (Ansible)"
+  when:
+    - maintenance_needs_reboot | bool
+    - maintenance_reboot_if_required | bool
+
+- name: Report pending reboot
+  ansible.builtin.debug:
+    msg: >-
+      Reboot required but maintenance_reboot_if_required=false —
+      schedule one or re-run with -e maintenance_reboot_if_required=true.
+  when:
+    - maintenance_needs_reboot | bool
+    - not (maintenance_reboot_if_required | bool)
+
+# --- Health report -------------------------------------------------------------
+- name: Collect failed systemd units
+  ansible.builtin.command: systemctl list-units --failed --no-legend --plain
+  register: maintenance_failed_units
+  changed_when: false
+
+- name: Maintenance summary
+  ansible.builtin.debug:
+    msg:
+      - "Disk / free:   {{ (ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first / 1024 / 1024 / 1024) | round(1) }}GB"
+      - "Memory free:   {{ ansible_memfree_mb }}MB / {{ ansible_memtotal_mb }}MB"
+      - "Failed units:  {{ maintenance_failed_units.stdout_lines | length }}"
+      - "Needs reboot:  {{ maintenance_needs_reboot }}"

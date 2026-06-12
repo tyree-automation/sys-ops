@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+Port {{ security_ssh_port }}
+PermitRootLogin {{ security_ssh_permit_root_login }}
+PasswordAuthentication {{ security_ssh_password_auth }}
+PubkeyAuthentication yes
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+HostbasedAuthentication no
+IgnoreRhosts yes
+AllowTcpForwarding {{ security_ssh_allow_tcp_forwarding }}
+AllowAgentForwarding {{ security_ssh_allow_agent_forwarding }}
+X11Forwarding no
+MaxAuthTries 5
+MaxSessions 10
+MaxStartups 10:30:60
+LoginGraceTime 30
+ClientAliveInterval 300
+ClientAliveCountMax 2
+{% if security_ssh_modern_crypto | bool %}
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+{% endif %}
