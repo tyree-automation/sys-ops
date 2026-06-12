@@ -11,7 +11,7 @@ Supports Debian/Ubuntu and RHEL-family (Rocky, Alma, Fedora) hosts.
 | Stage | Playbook | What it does |
 |---|---|---|
 | **Audit** | `playbooks/audit.yml` | Read-only health report: NTP sync, pending reboot, tailscale state, failed units, disk/memory. |
-| **Onboard** | `playbooks/onboard.yml` | Full system update, base packages (git, curl, …), unattended security upgrades, timezone + chrony NTP, managed users + SSH keys + sudo, SSH hardening, fail2ban, firewall (ufw/firewalld), Tailscale install + tailnet join. The machine comes out ready for its service life. |
+| **Onboard** | `playbooks/onboard.yml` | Full system update, base packages (git, curl, …), unattended security upgrades, hostname + CLLI login banner, persistent capped journald, optional swap file, timezone + chrony NTP, managed users + SSH keys + sudo, SSH hardening, fail2ban, firewall (ufw/firewalld), system hardening (see below), Tailscale install + tailnet join. The machine comes out ready for its service life. |
 | **Maintain** | `playbooks/maintenance.yml` | Update all packages, autoremove orphans, clean caches, vacuum journals, health summary, optional auto-reboot when required. Schedule this weekly in Semaphore. |
 | **Decommission** | `playbooks/decommission.yml` | Tear everything back down to (near) factory default: leave + uninstall Tailscale, revert hardening, remove firewall/fail2ban, delete managed users, remove onboarded packages, wipe logs/histories, reset machine-id, optionally regenerate SSH host keys and revoke Ansible's own access. Ready to redeploy or sell. |
 
@@ -101,6 +101,31 @@ gated behind a survey variable the operator must type (`WIPE`).
 A ready-to-run `docker-compose.yml` for the Semaphore server and the full
 wiring guide are in [`semaphore/SETUP.md`](semaphore/SETUP.md).
 
+## Hardening
+
+Onboarding applies OS-agnostic hardening across both distro families, all
+individually toggleable (see `roles/hardening/defaults/main.yml` and the
+security vars in `inventory/group_vars/all.yml`):
+
+- **Kernel/network sysctls** — syncookies, redirect/source-route rejection,
+  martian logging, `kptr_restrict`, `dmesg_restrict`, ptrace scope,
+  unprivileged BPF off, protected hard/symlinks/fifos, no setuid core dumps.
+  Reverse-path filtering is set to *loose* (2) on purpose — strict mode
+  breaks Tailscale exit nodes and subnet routers. Override any key via
+  `hardening_sysctl_extra`.
+- **SSH** — beyond key-only auth: no agent/TCP forwarding, no host-based
+  auth, login grace 30s, connection limits, and modern-only KEX/cipher/MAC
+  algorithms (`security_ssh_modern_crypto`, needs OpenSSH 7.4+ clients).
+- **Kernel module blacklist** — uncommon filesystems (cramfs, hfs, udf, …)
+  and network protocols (dccp, sctp, rds, tipc); USB mass storage blocking
+  is opt-in (`hardening_blacklist_usb_storage`).
+- **Core dumps disabled** — limits.d + `fs.suid_dumpable=0`.
+- **Unneeded services masked** — avahi, cups, rpcbind, bluetooth (only when
+  actually present on the host).
+- **auditd** — kernel audit trail with distro default rules.
+
+Decommission reverts all of it (`decommission_revert_hardening`).
+
 ## Configuration
 
 Fleet policy lives in `inventory/group_vars/all.yml` (timezone, NTP pools,
@@ -133,10 +158,11 @@ inventory/
 playbooks/
   audit.yml  onboard.yml  maintenance.yml  decommission.yml
 roles/
-  base/          # hostname, packages, unattended-upgrades
+  base/          # hostname, packages, motd, journald, swap, unattended-upgrades
   time_sync/     # timezone + chrony NTP
   users/         # managed users, ssh keys, sudo
   security/      # sshd hardening, fail2ban, ufw/firewalld
+  hardening/     # sysctls, module blacklist, core dumps, services, auditd
   tailscale/     # install + join tailnet
   maintenance/   # updates, cleanup, reboot handling, health report
   decommission/  # full teardown to factory default

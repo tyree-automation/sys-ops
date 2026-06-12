@@ -30,6 +30,12 @@ base_packages:
 # Add per-group/per-host extras without redefining the whole list:
 base_extra_packages: []
 base_enable_unattended_upgrades: true
+# Login banner with CLLI / role / env / asset tag.
+base_motd_enabled: true
+# Persistent journal, capped.
+base_journald_max_use: "500M"
+# Swap file: set a size in MB to enable (recommended on small-RAM VPSes).
+base_swap_size_mb: 0
 
 # --- Managed users ---------------------------------------------------------
 # Users created at onboarding and removed at decommission.
@@ -51,6 +57,18 @@ security_firewall_allowed_tcp_ports:
   - "{{ security_ssh_port }}"
 security_firewall_allowed_udp_ports:
   - 41641   # tailscale direct connections
+# Modern-only SSH crypto (OpenSSH 7.4+); disable for ancient clients.
+security_ssh_modern_crypto: true
+
+# --- System hardening (roles/hardening) ------------------------------------
+# Kernel/network sysctls, uncommon module blacklist, core dumps off,
+# unneeded services masked, auditd. Per-section toggles + the full sysctl
+# dict live in roles/hardening/defaults/main.yml; override single keys via:
+# hardening_sysctl_extra: { kernel.sysrq: 1 }
+hardening_sysctl_enabled: true
+hardening_blacklist_enabled: true
+hardening_disable_core_dumps: true
+hardening_auditd: true
 
 # --- Tailscale --------------------------------------------------------------
 tailscale_enabled: true

@@ -5,12 +5,13 @@
 #   ansible-playbook playbooks/onboard.yml -l web-01
 #
 # What it does, in order:
-#   1. base        — hostname, base packages, unattended security upgrades
+#   1. base        — hostname, packages, MOTD, journald, swap, auto-upgrades
 #   2. time_sync   — timezone + chrony NTP
 #   3. users       — managed users, SSH keys, sudo
 #   4. security    — SSH hardening, fail2ban, firewall
-#   5. tailscale   — install + join the tailnet (needs tailscale_authkey)
-#   6. maintenance — full system update so it enters service current
+#   5. hardening   — sysctls, module blacklist, core dumps, services, auditd
+#   6. tailscale   — install + join the tailnet (needs tailscale_authkey)
+#   7. maintenance — full system update so it enters service current
 # ===========================================================================
 - name: Onboard server for service life
   hosts: "{{ target_hosts | default('all') }}"
@@ -20,6 +21,7 @@
     - time_sync
     - users
     - security
+    - hardening
     - tailscale
     - maintenance
 

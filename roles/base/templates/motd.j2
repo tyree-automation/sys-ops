@@ -1,0 +1,9 @@
+{{ ansible_managed }}
+==============================================================================
+  {{ inventory_hostname }}{% if clli is defined %}  ({{ clli }}){% endif %}
+
+  role:  {{ server_role | default('n/a') }}    env: {{ server_env | default('n/a') }}    site: {{ clli_place | default('?') }}/{{ clli_region | default('?') }}/{{ clli_site | default('?') }}
+  asset: {{ asset_tag | default('n/a') }}    onboarded: {{ added_on | default('n/a') }}
+
+  Managed by sys-ops Ansible — manual changes may be overwritten.
+==============================================================================
