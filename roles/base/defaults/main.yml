@@ -1,0 +1,22 @@
+---
+base_packages:
+  - git
+  - curl
+  - wget
+  - vim
+  - htop
+  - tmux
+  - unzip
+  - jq
+  - rsync
+  - ca-certificates
+  - python3
+base_extra_packages: []
+
+# Set to true (and set base_hostname) to manage the hostname.
+base_manage_hostname: false
+base_hostname: "{{ inventory_hostname }}"
+
+# Debian/Ubuntu only: enable automatic security updates between
+# maintenance runs.
+base_enable_unattended_upgrades: true

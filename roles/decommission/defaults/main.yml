@@ -1,0 +1,22 @@
+---
+# HARD SAFETY GATE: the play refuses to run unless this equals "WIPE".
+# Pass at runtime: -e decommission_confirm=WIPE
+# In Semaphore: required survey variable the operator types every run.
+decommission_confirm: ""
+
+# Per-step toggles — default to a full teardown.
+decommission_remove_tailscale: true
+decommission_revert_security: true     # ssh drop-in, fail2ban, firewall
+decommission_remove_users: true        # managed_users + sudoers entries
+decommission_remove_packages: true     # packages installed at onboarding
+decommission_clear_logs: true          # journals, login records, histories
+decommission_reset_machine_id: true    # regenerated on next boot
+
+# Regenerate SSH host keys so the buyer / next deployment can't be
+# impersonated by the old identity. Causes host-key-changed warnings
+# on the next connection.
+decommission_regenerate_ssh_host_keys: false
+
+# Remove the connecting user's authorized_keys as the FINAL task.
+# After this Ansible can no longer reach the host.
+decommission_revoke_ansible_access: false

@@ -1,0 +1,125 @@
+---
+# --- SSH hardening ---------------------------------------------------------
+- name: Ensure sshd_config.d drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: security_ssh_hardening | bool
+
+- name: Install SSH hardening drop-in
+  ansible.builtin.template:
+    src: 99-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    owner: root
+    group: root
+    mode: "0600"
+    validate: "sshd -t -f %s"
+  when: security_ssh_hardening | bool
+  notify: Restart sshd
+
+# --- fail2ban ----------------------------------------------------------------
+- name: Install fail2ban
+  ansible.builtin.package:
+    name: fail2ban
+    state: present
+  when: security_fail2ban | bool
+
+- name: Configure fail2ban sshd jail
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  when: security_fail2ban | bool
+  notify: Restart fail2ban
+
+- name: Enable and start fail2ban
+  ansible.builtin.systemd_service:
+    name: fail2ban
+    state: started
+    enabled: true
+  when: security_fail2ban | bool
+
+# --- Firewall (ufw on Debian family) ----------------------------------------
+- name: Configure ufw firewall
+  when:
+    - security_firewall | bool
+    - ansible_os_family == "Debian"
+  block:
+    - name: Install ufw
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Allow TCP ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item | string }}"
+        proto: tcp
+      loop: "{{ security_firewall_allowed_tcp_ports }}"
+
+    - name: Allow UDP ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item | string }}"
+        proto: udp
+      loop: "{{ security_firewall_allowed_udp_ports }}"
+
+    - name: Allow traffic on the tailscale interface
+      community.general.ufw:
+        rule: allow
+        interface: tailscale0
+        direction: in
+      when: tailscale_enabled | default(true) | bool
+
+    - name: Enable ufw with default deny incoming
+      community.general.ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+# --- Firewall (firewalld on RedHat family) ----------------------------------
+- name: Configure firewalld
+  when:
+    - security_firewall | bool
+    - ansible_os_family == "RedHat"
+  block:
+    - name: Install firewalld
+      ansible.builtin.dnf:
+        name: firewalld
+        state: present
+
+    - name: Enable and start firewalld
+      ansible.builtin.systemd_service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Allow TCP ports
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        immediate: true
+        state: enabled
+      loop: "{{ security_firewall_allowed_tcp_ports }}"
+
+    - name: Allow UDP ports
+      ansible.posix.firewalld:
+        port: "{{ item }}/udp"
+        permanent: true
+        immediate: true
+        state: enabled
+      loop: "{{ security_firewall_allowed_udp_ports }}"
+
+    - name: Trust the tailscale interface
+      ansible.posix.firewalld:
+        zone: trusted
+        interface: tailscale0
+        permanent: true
+        immediate: true
+        state: enabled
+      when: tailscale_enabled | default(true) | bool

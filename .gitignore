@@ -1,0 +1,12 @@
+# Real inventory may contain hostnames/IPs you don't want in git.
+# Copy inventory/hosts.example.yml to inventory/hosts.yml for local CLI use.
+inventory/hosts.yml
+
+# Ansible artifacts
+*.retry
+.vault_pass
+vault_pass*
+
+# Local secrets / env
+.env
+secrets.yml
