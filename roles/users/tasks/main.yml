@@ -1,0 +1,31 @@
+---
+- name: Create managed users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    create_home: true
+    state: present
+  loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Install SSH authorized keys
+  ansible.posix.authorized_key:
+    user: "{{ item.0.name }}"
+    key: "{{ item.1 }}"
+    state: present
+  loop: "{{ managed_users | subelements('ssh_keys', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}"
+
+- name: Grant passwordless sudo
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/90-{{ item.name }}"
+    content: "{{ item.name }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+  loop: "{{ managed_users | selectattr('sudo', 'defined') | selectattr('sudo') | list }}"
+  loop_control:
+    label: "{{ item.name }}"

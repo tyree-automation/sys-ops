@@ -1,0 +1,34 @@
+---
+# ===========================================================================
+# ONBOARD — take a freshly imaged machine to "ready for service life".
+#
+#   ansible-playbook playbooks/onboard.yml -l web-01
+#
+# What it does, in order:
+#   1. base        — hostname, base packages, unattended security upgrades
+#   2. time_sync   — timezone + chrony NTP
+#   3. users       — managed users, SSH keys, sudo
+#   4. security    — SSH hardening, fail2ban, firewall
+#   5. tailscale   — install + join the tailnet (needs tailscale_authkey)
+#   6. maintenance — full system update so it enters service current
+# ===========================================================================
+- name: Onboard server for service life
+  hosts: "{{ target_hosts | default('all') }}"
+  become: true
+  roles:
+    - base
+    - time_sync
+    - users
+    - security
+    - tailscale
+    - maintenance
+
+  post_tasks:
+    - name: Onboarding summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} onboarded:
+          {{ ansible_distribution }} {{ ansible_distribution_version }},
+          kernel {{ ansible_kernel }},
+          timezone {{ time_timezone }},
+          tailscale {{ 'joined' if (tailscale_enabled | bool) else 'disabled' }}.
