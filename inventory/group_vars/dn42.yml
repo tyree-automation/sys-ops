@@ -1,0 +1,27 @@
+---
+# =============================================================================
+# dn42 network identity — applies to every node in the 'dn42' group.
+#
+# FILL THESE IN before deploying your first dn42 node. You need your own
+# ASN and address space from the dn42 registry first:
+#   https://dn42.dev/howto/Getting-Started
+#
+# Per-node addressing (dn42_ownip / dn42_ownip6 / dn42_link_local6) is set
+# by scripts/new-node.py in host_vars/<node>.yml.
+# No peers are defined here — peerings are per node, see
+# roles/dn42/defaults/main.yml for the dn42_peers schema.
+# =============================================================================
+
+# Your dn42 ASN (as registered in the dn42 registry).
+dn42_asn: 4242420000          # CHANGEME
+
+# The networks you announce (your registered prefixes).
+dn42_ownnets4:
+  - 172.20.0.0/27             # CHANGEME
+dn42_ownnets6:
+  - fd00:0000:0000::/48       # CHANGEME
+
+# Where the WireGuard tunnels listen. Unless a peer sets wg_listen_port
+# explicitly, a tunnel listens on dn42_wg_port_base + (peer ASN mod 10000)
+# — the common "2xxxx = last digits of the peer's ASN" dn42 convention.
+dn42_wg_port_base: 20000

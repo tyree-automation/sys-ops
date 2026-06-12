@@ -1,0 +1,4 @@
+# Policy for test nodes: throwaway boxes — keep them current automatically
+# and don't be precious about reboots.
+maintenance_reboot_if_required: true
+maintenance_journal_vacuum_time: "7d"

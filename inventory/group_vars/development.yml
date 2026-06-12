@@ -1,0 +1,2 @@
+# Policy for development/staging nodes.
+maintenance_reboot_if_required: false

@@ -1,0 +1,9 @@
+# Managed by sys-ops (roles/dn42)
+[Unit]
+Description=Update dn42 ROA tables
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dn42-update-roas

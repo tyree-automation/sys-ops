@@ -1,0 +1,44 @@
+---
+# ===========================================================================
+# ONBOARD — take a freshly imaged machine to "ready for service life".
+#
+#   ansible-playbook playbooks/onboard.yml -l <node>
+#
+# Register the node first with scripts/new-node.py — it writes the
+# inventory entry, host_vars, and component choices, then offers to run
+# this playbook for you.
+#
+# What it does, in order:
+#   1. base        — hostname, base packages, unattended security upgrades
+#   2. time_sync   — timezone + chrony NTP
+#   3. users       — managed users, SSH keys, sudo
+#   4. security    — SSH hardening, fail2ban, firewall
+#   5. tailscale   — OPTIONAL: join the tailnet (tailscale_enabled host var)
+#   6. dn42        — OPTIONAL: dn42 router stack (node in the 'dn42' group)
+#   7. maintenance — full system update so it enters service current
+# ===========================================================================
+- name: Onboard node for service life
+  hosts: "{{ target_hosts | default('all') }}"
+  become: true
+  roles:
+    - base
+    - time_sync
+    - users
+    - security
+    - role: tailscale
+      when: tailscale_enabled | bool
+    - role: dn42
+      when: "'dn42' in group_names"
+    - maintenance
+
+  post_tasks:
+    - name: Onboarding summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} onboarded:
+          {{ ansible_distribution }} {{ ansible_distribution_version }},
+          kernel {{ ansible_kernel }},
+          environment {{ (group_names | intersect(['test', 'development', 'production']) | first) | default('none') }},
+          timezone {{ time_timezone }},
+          components: tailscale={{ 'on' if (tailscale_enabled | bool) else 'off' }},
+          dn42={{ 'on' if 'dn42' in group_names else 'off' }}.

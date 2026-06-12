@@ -1,0 +1,50 @@
+---
+# Remove the dn42 component from a node. Used by playbooks/decommission.yml
+# (behind its WIPE gate) and runnable standalone:
+#   ansible-playbook playbooks/dn42.yml -l <node> -e dn42_state=absent -e decommission_confirm=WIPE
+
+- name: Find tunnel configs
+  ansible.builtin.find:
+    paths: /etc/wireguard
+    patterns: "dn42-*.conf"
+  register: _dn42_teardown_confs
+
+- name: Stop and disable tunnels
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ item.path | basename | regex_replace('\\.conf$', '') }}"
+    state: stopped
+    enabled: false
+  loop: "{{ _dn42_teardown_confs.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  failed_when: false
+
+- name: Stop and disable bird and the ROA timer
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - bird
+    - dn42-roa.timer
+  failed_when: false
+
+- name: Uninstall bird
+  ansible.builtin.apt:
+    name: bird2
+    state: absent
+    purge: true
+
+- name: Remove dn42 files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ (_dn42_teardown_confs.files | map(attribute='path') | list) + [
+      '/etc/wireguard/dn42-privatekey',
+      '/etc/wireguard/dn42-publickey',
+      '/etc/bird',
+      '/etc/systemd/system/dn42-roa.service',
+      '/etc/systemd/system/dn42-roa.timer',
+      '/usr/local/sbin/dn42-update-roas',
+      '/etc/sysctl.d/90-dn42.conf'
+    ] }}"

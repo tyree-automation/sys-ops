@@ -1,0 +1,71 @@
+---
+# =============================================================================
+# Fleet-wide policy. Override per environment (group_vars/test.yml,
+# development.yml, production.yml), per component (group_vars/dn42.yml),
+# per host (host_vars/<node>.yml) or at runtime with -e.
+# Role defaults live in roles/*/defaults/main.yml — this file is the place
+# to set your fleet's policy.
+# =============================================================================
+
+# --- Time / NTP -------------------------------------------------------------
+time_timezone: "Etc/UTC"
+time_ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+  - 2.pool.ntp.org
+  - 3.pool.ntp.org
+
+# --- Base packages installed on every host ----------------------------------
+base_packages:
+  - git
+  - curl
+  - wget
+  - vim
+  - htop
+  - tmux
+  - unzip
+  - jq
+  - rsync
+  - ca-certificates
+  - python3
+# Add per-group/per-host extras without redefining the whole list:
+base_extra_packages: []
+base_enable_unattended_upgrades: true
+
+# --- Managed users -----------------------------------------------------------
+# Users created at onboarding and removed at decommission.
+managed_users: []
+#  - name: ops
+#    sudo: true
+#    shell: /bin/bash
+#    ssh_keys:
+#      - "ssh-ed25519 AAAA... ops@laptop"
+
+# --- Security ----------------------------------------------------------------
+security_ssh_hardening: true
+security_ssh_permit_root_login: "prohibit-password"
+security_ssh_password_auth: "no"   # ensure key access exists BEFORE enabling!
+security_ssh_port: 22
+security_fail2ban: true
+security_firewall: true
+security_firewall_allowed_tcp_ports:
+  - "{{ security_ssh_port }}"
+security_firewall_allowed_udp_ports: []
+
+# --- Optional components -------------------------------------------------------
+# Components are opt-in per node. scripts/new-node.py asks about each one
+# while registering a node and records the answer in host_vars/<node>.yml
+# (tailscale) or via group membership (dn42).
+
+# Tailscale: set tailscale_enabled: true in a node's host_vars to join it
+# to the tailnet during onboarding.
+tailscale_enabled: false
+# Provide the auth key at runtime (-e tailscale_authkey=tskey-auth-...) or
+# from a vaulted var file — never commit it in plain text.
+tailscale_authkey: ""
+# Extra flags for `tailscale up`, e.g. "--ssh --advertise-tags=tag:server"
+tailscale_up_args: ""
+
+# --- Maintenance ---------------------------------------------------------------
+maintenance_reboot_if_required: false
+maintenance_journal_vacuum_time: "14d"

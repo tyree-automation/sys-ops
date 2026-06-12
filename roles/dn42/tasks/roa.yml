@@ -1,0 +1,27 @@
+---
+- name: Install ROA update script
+  ansible.builtin.template:
+    src: dn42-update-roas.sh.j2
+    dest: /usr/local/sbin/dn42-update-roas
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install ROA refresh service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - dn42-roa.service
+    - dn42-roa.timer
+  register: _dn42_roa_units
+
+- name: Enable ROA refresh timer
+  ansible.builtin.systemd_service:
+    name: dn42-roa.timer
+    enabled: true
+    state: started
+    daemon_reload: "{{ _dn42_roa_units.changed }}"

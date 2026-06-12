@@ -1,0 +1,13 @@
+---
+tailscale_enabled: true
+
+# Auth key from https://login.tailscale.com/admin/settings/keys
+# (use a reusable, pre-authorized key for fleet onboarding).
+# Provide via -e or a vaulted var file; never commit it in plain text.
+tailscale_authkey: ""
+
+tailscale_hostname: "{{ inventory_hostname }}"
+
+# Extra flags appended to `tailscale up`, e.g.:
+#   "--ssh --advertise-tags=tag:server --accept-routes"
+tailscale_up_args: ""

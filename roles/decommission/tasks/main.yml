@@ -1,0 +1,208 @@
+---
+# ============================================================================
+# Teardown to (near) factory default. Ordered so the machine stays reachable
+# until the very last step. Most steps tolerate partial/missing state so the
+# playbook can be re-run on a half-decommissioned host.
+# ============================================================================
+
+- name: "SAFETY GATE — require explicit confirmation"
+  ansible.builtin.assert:
+    that:
+      - decommission_confirm == "WIPE"
+    fail_msg: >-
+      Refusing to decommission {{ inventory_hostname }}.
+      Re-run with -e decommission_confirm=WIPE
+      to proceed.
+
+# --- Tailscale ----------------------------------------------------------------
+- name: Remove tailscale
+  when: decommission_remove_tailscale | bool
+  block:
+    - name: Log out of the tailnet
+      ansible.builtin.command: tailscale logout
+      failed_when: false
+      changed_when: true
+
+    - name: Stop and disable tailscaled
+      ansible.builtin.systemd_service:
+        name: tailscaled
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Uninstall tailscale package
+      ansible.builtin.package:
+        name: tailscale
+        state: absent
+
+    - name: Remove tailscale state and repo files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/tailscale
+        - /etc/default/tailscaled
+        - /etc/apt/sources.list.d/tailscale.list
+        - /usr/share/keyrings/tailscale-archive-keyring.gpg
+        - /etc/yum.repos.d/tailscale.repo
+
+# --- Security hardening rollback ------------------------------------------------
+- name: Revert security configuration
+  when: decommission_revert_security | bool
+  block:
+    - name: Remove SSH hardening drop-in
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d/99-hardening.conf
+        state: absent
+      notify: Restart sshd
+
+    - name: Stop and remove fail2ban
+      ansible.builtin.package:
+        name: fail2ban
+        state: absent
+
+    - name: Remove fail2ban configuration
+      ansible.builtin.file:
+        path: /etc/fail2ban
+        state: absent
+
+    - name: Reset and disable ufw (Debian family)
+      ansible.builtin.command: ufw --force reset
+      when: ansible_os_family == "Debian"
+      failed_when: false
+      changed_when: true
+
+    - name: Stop and disable firewalld (RedHat family)
+      ansible.builtin.systemd_service:
+        name: firewalld
+        state: stopped
+        enabled: false
+      when: ansible_os_family == "RedHat"
+      failed_when: false
+
+- name: Remove unattended-upgrades policy (Debian family)
+  ansible.builtin.file:
+    path: /etc/apt/apt.conf.d/20auto-upgrades
+    state: absent
+  when: ansible_os_family == "Debian"
+
+# --- Managed users ----------------------------------------------------------------
+- name: Remove managed users
+  when: decommission_remove_users | bool
+  block:
+    - name: Remove sudoers entries
+      ansible.builtin.file:
+        path: "/etc/sudoers.d/90-{{ item.name }}"
+        state: absent
+      loop: "{{ managed_users | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Delete users and their home directories
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        state: absent
+        remove: true
+        force: true
+      loop: "{{ managed_users | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.name != ansible_user_id   # never saw off the branch we sit on
+
+# --- Packages -----------------------------------------------------------------------
+- name: Remove packages installed at onboarding
+  ansible.builtin.package:
+    name: "{{ ((base_packages | default([])) + (base_extra_packages | default([]))) | difference(['python3', 'ca-certificates']) }}"
+    state: absent
+  when: decommission_remove_packages | bool
+
+- name: Autoremove orphaned dependencies (Debian family)
+  ansible.builtin.apt:
+    autoremove: true
+    purge: true
+  when:
+    - decommission_remove_packages | bool
+    - ansible_os_family == "Debian"
+
+- name: Autoremove orphaned dependencies (RedHat family)
+  ansible.builtin.dnf:
+    autoremove: true
+  when:
+    - decommission_remove_packages | bool
+    - ansible_os_family == "RedHat"
+
+# --- Logs, histories, identity -------------------------------------------------------
+- name: Clear logs and histories
+  when: decommission_clear_logs | bool
+  block:
+    - name: Rotate and purge journal
+      ansible.builtin.shell: |
+        journalctl --rotate
+        journalctl --vacuum-time=1s
+      changed_when: true
+
+    - name: Truncate login records
+      ansible.builtin.command: "truncate -s 0 {{ item }}"
+      loop:
+        - /var/log/wtmp
+        - /var/log/btmp
+        - /var/log/lastlog
+      failed_when: false
+      changed_when: true
+
+    - name: Remove shell histories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /root/.bash_history
+        - /root/.zsh_history
+
+- name: Reset machine-id (regenerated on next boot)
+  when: decommission_reset_machine_id | bool
+  block:
+    - name: Truncate /etc/machine-id
+      ansible.builtin.copy:
+        dest: /etc/machine-id
+        content: ""
+        owner: root
+        group: root
+        mode: "0444"
+
+    - name: Point dbus machine-id at /etc/machine-id
+      ansible.builtin.file:
+        src: /etc/machine-id
+        dest: /var/lib/dbus/machine-id
+        state: link
+        force: true
+
+- name: Regenerate SSH host keys
+  when: decommission_regenerate_ssh_host_keys | bool
+  block:
+    - name: Remove existing host keys
+      ansible.builtin.shell: rm -f /etc/ssh/ssh_host_*
+      changed_when: true
+
+    - name: Generate fresh host keys
+      ansible.builtin.command: ssh-keygen -A
+      changed_when: true
+      notify: Restart sshd
+
+# --- Final: revoke our own access (host becomes unreachable) --------------------------
+- name: Decommission summary
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} decommissioned.
+      {% if decommission_revoke_ansible_access | bool %}
+      Ansible access will now be revoked — this host is leaving management.
+      {% else %}
+      Ansible access retained (set decommission_revoke_ansible_access=true to revoke).
+      {% endif %}
+      Remove the machine from the Tailscale admin console and from the
+      inventory (scripts and hosts.yml) to complete offboarding.
+
+- name: Revoke the connecting user's authorized_keys (FINAL — host unreachable after this)
+  ansible.builtin.file:
+    path: "{{ (ansible_user_id == 'root') | ternary('/root', '/home/' + ansible_user_id) }}/.ssh/authorized_keys"
+    state: absent
+  when: decommission_revoke_ansible_access | bool

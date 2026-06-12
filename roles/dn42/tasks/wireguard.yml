@@ -1,0 +1,59 @@
+---
+- name: Render tunnel config per peer
+  ansible.builtin.template:
+    src: wg-peer.conf.j2
+    dest: "/etc/wireguard/dn42-{{ peer.name }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ dn42_peers }}"
+  loop_control:
+    loop_var: peer
+    label: "{{ peer.name }}"
+  register: _dn42_wg_confs
+
+- name: Enable and start tunnels
+  ansible.builtin.systemd_service:
+    name: "wg-quick@dn42-{{ peer.name }}"
+    enabled: true
+    state: started
+  loop: "{{ dn42_peers }}"
+  loop_control:
+    loop_var: peer
+    label: "{{ peer.name }}"
+
+- name: Restart tunnels whose config changed
+  ansible.builtin.systemd_service:
+    name: "wg-quick@dn42-{{ item.peer.name }}"
+    state: restarted
+  loop: "{{ _dn42_wg_confs.results | select('changed') | list }}"
+  loop_control:
+    label: "{{ item.peer.name }}"
+
+- name: Find existing tunnel configs
+  ansible.builtin.find:
+    paths: /etc/wireguard
+    patterns: "dn42-*.conf"
+  register: _dn42_wg_existing
+
+- name: Remove tunnels for deleted peers
+  vars:
+    _iface: "{{ item.path | basename | regex_replace('\\.conf$', '') }}"
+  when: >-
+    _iface not in (dn42_peers | map(attribute='name')
+                   | map('regex_replace', '^', 'dn42-') | list)
+  block:
+    - name: Stop and disable stale tunnel
+      ansible.builtin.systemd_service:
+        name: "wg-quick@{{ _iface }}"
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remove stale tunnel config
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+  loop: "{{ _dn42_wg_existing.files }}"
+  loop_control:
+    label: "{{ item.path }}"

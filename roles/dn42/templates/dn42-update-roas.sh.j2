@@ -1,0 +1,13 @@
+#!/bin/bash
+# Managed by sys-ops (roles/dn42) — fetch dn42 ROA tables and reload bird.
+set -euo pipefail
+
+curl -fsSL --retry 3 -o /etc/bird/roa_dn42_v4.conf.tmp "{{ dn42_roa_url4 }}"
+curl -fsSL --retry 3 -o /etc/bird/roa_dn42_v6.conf.tmp "{{ dn42_roa_url6 }}"
+
+mv /etc/bird/roa_dn42_v4.conf.tmp /etc/bird/roa_dn42_v4.conf
+mv /etc/bird/roa_dn42_v6.conf.tmp /etc/bird/roa_dn42_v6.conf
+chown bird:bird /etc/bird/roa_dn42_v4.conf /etc/bird/roa_dn42_v6.conf
+
+# Reload if bird is up; not fatal during initial provisioning.
+birdc configure >/dev/null 2>&1 || true

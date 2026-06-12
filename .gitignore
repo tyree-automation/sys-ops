@@ -1,0 +1,9 @@
+# Ansible artifacts
+*.retry
+.vault_pass
+vault_pass*
+
+# Local secrets / env
+.env
+secrets.yml
+__pycache__/

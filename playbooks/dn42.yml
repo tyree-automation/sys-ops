@@ -1,0 +1,37 @@
+---
+# ===========================================================================
+# DN42 — deploy or reconfigure the dn42 router stack on nodes in the
+# 'dn42' group. Run after editing a node's dn42_peers or the network
+# identity in inventory/group_vars/dn42.yml:
+#
+#   ansible-playbook playbooks/dn42.yml -l <node>
+#
+# Remove the stack from a node (also happens during decommission):
+#
+#   ansible-playbook playbooks/dn42.yml -l <node> \
+#       -e dn42_state=absent -e decommission_confirm=WIPE
+# ===========================================================================
+- name: Configure dn42 routers
+  hosts: "{{ target_hosts | default('dn42') }}"
+  become: true
+  tasks:
+    - name: Deploy dn42 stack
+      ansible.builtin.include_role:
+        name: dn42
+      when: dn42_state | default('present') != 'absent'
+
+    - name: Remove dn42 stack
+      when: dn42_state | default('present') == 'absent'
+      block:
+        - name: "SAFETY GATE — require explicit confirmation"
+          ansible.builtin.assert:
+            that:
+              - decommission_confirm | default('') == "WIPE"
+            fail_msg: >-
+              Refusing to remove the dn42 stack from {{ inventory_hostname }}.
+              Re-run with -e decommission_confirm=WIPE to proceed.
+
+        - name: Tear down dn42 stack
+          ansible.builtin.include_role:
+            name: dn42
+            tasks_from: teardown

@@ -1,0 +1,5 @@
+# Policy for production nodes: conservative by default.
+# Never auto-reboot production — schedule reboots deliberately with
+#   ansible-playbook playbooks/maintenance.yml -l <node> -e maintenance_reboot_if_required=true
+maintenance_reboot_if_required: false
+maintenance_journal_vacuum_time: "30d"

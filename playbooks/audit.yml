@@ -1,0 +1,43 @@
+---
+# ===========================================================================
+# AUDIT — read-only fleet health check. Safe to run any time; good first
+# cron job to verify connectivity and credentials.
+# ===========================================================================
+- name: Fleet audit (read-only)
+  hosts: "{{ target_hosts | default('all') }}"
+  become: true
+  tasks:
+    - name: Check time synchronisation
+      ansible.builtin.command: timedatectl show --property=NTPSynchronized --value
+      register: audit_ntp
+      changed_when: false
+      failed_when: false
+
+    - name: Check for pending reboot (Debian family)
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: audit_reboot
+      when: ansible_os_family == "Debian"
+
+    - name: Check tailscale status
+      ansible.builtin.command: tailscale status --peers=false
+      register: audit_tailscale
+      changed_when: false
+      failed_when: false
+
+    - name: List failed systemd units
+      ansible.builtin.command: systemctl list-units --failed --no-legend --plain
+      register: audit_failed_units
+      changed_when: false
+
+    - name: Host report
+      ansible.builtin.debug:
+        msg:
+          - "OS:            {{ ansible_distribution }} {{ ansible_distribution_version }} ({{ ansible_kernel }})"
+          - "Uptime:        {{ (ansible_uptime_seconds / 86400) | round(1) }} days"
+          - "Memory:        {{ ansible_memfree_mb }}MB free of {{ ansible_memtotal_mb }}MB"
+          - "Disk /:        {{ (ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first / 1024 / 1024 / 1024) | round(1) }}GB free"
+          - "NTP synced:    {{ audit_ntp.stdout | default('unknown') }}"
+          - "Needs reboot:  {{ audit_reboot.stat.exists | default('n/a (non-Debian)') }}"
+          - "Tailscale:     {{ audit_tailscale.stdout_lines[0] | default('not installed / logged out') }}"
+          - "Failed units:  {{ audit_failed_units.stdout_lines | length }}"
