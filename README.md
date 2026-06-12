@@ -2,8 +2,8 @@
 
 One Ansible repo that manages every node you run — **test**, **development**
 and **production** — through its whole life: **onboard → maintain →
-decommission**, with optional components (Tailscale, a dn42 router stack)
-chosen per node at onboarding time.
+decommission**, with optional components (Tailscale, a dn42 router stack,
+a fleet web dashboard) chosen per node at onboarding time.
 
 Base lifecycle supports Debian/Ubuntu and RHEL-family (Rocky, Alma, Fedora)
 hosts; the dn42 component is Debian-family only.
@@ -22,7 +22,10 @@ $ ansible-playbook playbooks/onboard.yml -l <node>
 2. **Environment** — `test`, `development` or `production` (sets the
    maintenance policy via `inventory/group_vars/<env>.yml`)
 3. **Optional components** — join the tailnet? deploy the dn42 router
-   stack? (dn42 is typically a test-node thing, but any node can opt in)
+   stack? serve the fleet web dashboard? (dn42 is typically a test-node
+   thing, but any node can opt in)
+4. **Map location** — optional lat/lon so the node shows on the
+   dashboard's world map
 
 …then writes `inventory/hosts.yml` + `inventory/host_vars/<node>.yml`,
 prints a per-component checklist, and offers to run the onboarding
@@ -53,7 +56,7 @@ inventory/
 ```
 
 Every node is in exactly one **environment group** (`test`, `development`,
-`production`) and any number of **component groups** (currently `dn42`).
+`production`) and any number of **component groups** (`dn42`, `website`).
 Moving a node to the `retiring` group queues it for decommissioning.
 
 ## Optional components
@@ -107,6 +110,38 @@ Tunnels listen on `20000 + (peer ASN mod 10000)` unless a peer sets
 $ ansible-playbook playbooks/dn42.yml -l <node> -e dn42_state=absent -e decommission_confirm=WIPE
 ```
 
+### Fleet web dashboard
+
+A modern, self-hosted dashboard for the whole fleet — the successor to the
+old ansible-dn42 splash site (highdef.network), rebuilt from scratch:
+
+- **animated world map** (Leaflet) — pulsing node markers colored by
+  environment, curved animated arcs for the dn42 mesh and any custom links
+- **fleet stats** with count-up animations, environment filter pills,
+  live node search
+- **node cards + detail drawer** — status, components, dn42 addressing,
+  peering list, copy-ready playbook commands per node
+- **dn42 peering table** across the fleet
+- **customizable**: branding, tagline, accent color, footer, map
+  center/zoom/tiles, panel toggles and custom map links all live in
+  `site.yml`; viewers get a live accent-color picker and dark/light
+  toggle in the UI
+
+It's a static site (`web/`) fed by a generated dataset — no backend, no
+API keys. Node positions come from the optional map location asked by
+`scripts/new-node.py` (stored as `site_location` in host_vars).
+
+```console
+$ scripts/build-site.py            # inventory + site.yml -> web/data/fleet.json
+$ scripts/build-site.py --probe    # also ping nodes to show up/down status
+$ scripts/build-site.py --serve    # preview at http://localhost:8080
+$ ansible-playbook playbooks/website.yml   # deploy to the 'website' group
+```
+
+Set `show_addresses: false` in `site.yml` before publishing the dashboard
+anywhere public. Re-run `build-site.py` + `website.yml` whenever the fleet
+changes (a cron/CI job works well).
+
 ## Decommissioning
 
 ```console
@@ -122,9 +157,12 @@ its `host_vars` file.
 ## Repo layout
 
 ```
-playbooks/        audit, onboard, maintenance, decommission, dn42
+playbooks/        audit, onboard, maintenance, decommission, dn42, website
 roles/            base, time_sync, users, security, tailscale, maintenance,
-                  decommission, dn42
+                  decommission, dn42, website
 scripts/          new-node.py — interactive node registration
+                  build-site.py — build the fleet dashboard dataset
+web/              fleet dashboard (static site, generated data in web/data/)
+site.yml          dashboard customization (branding, map, panels)
 inventory/        hosts.yml, group_vars, host_vars
 ```

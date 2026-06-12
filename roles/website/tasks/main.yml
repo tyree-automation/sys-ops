@@ -1,0 +1,81 @@
+---
+# Deploy the fleet dashboard. Build the dataset first on the control node:
+#   scripts/build-site.py [--probe]
+
+- name: Check that the dashboard dataset has been built
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../web/data/fleet.json"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: _website_dataset
+
+- name: Fail if web/data/fleet.json is missing
+  ansible.builtin.fail:
+    msg: "web/data/fleet.json not found — run scripts/build-site.py first."
+  when: not _website_dataset.stat.exists
+  run_once: true
+
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+
+- name: Create web root
+  ansible.builtin.file:
+    path: "{{ website_root }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Copy dashboard files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../web/"
+    dest: "{{ website_root }}/"
+    owner: www-data
+    group: www-data
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: Install nginx site
+  ansible.builtin.template:
+    src: nginx-site.conf.j2
+    dest: /etc/nginx/sites-available/sys-ops-dashboard.conf
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable nginx site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/sys-ops-dashboard.conf
+    dest: /etc/nginx/sites-enabled/sys-ops-dashboard.conf
+    state: link
+  notify: Reload nginx
+
+- name: Disable the default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Enable and start nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Check whether ufw is present
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: _website_ufw
+  when: website_manage_firewall | bool
+
+- name: Allow the dashboard port
+  community.general.ufw:
+    rule: allow
+    port: "{{ website_listen_port | string }}"
+    proto: tcp
+    comment: sys-ops dashboard
+  when:
+    - website_manage_firewall | bool
+    - _website_ufw.stat.exists

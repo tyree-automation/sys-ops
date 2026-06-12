@@ -35,5 +35,11 @@
         name: dn42
         tasks_from: teardown
       when: "'dn42' in group_names"
+
+    - name: Remove fleet dashboard before base teardown
+      ansible.builtin.include_role:
+        name: website
+        tasks_from: teardown
+      when: "'website' in group_names"
   roles:
     - decommission

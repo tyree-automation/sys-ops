@@ -1,0 +1,115 @@
+{
+  "generated": "2026-06-12 19:52 UTC",
+  "site": {
+    "title": "sys-ops",
+    "subtitle": "fleet operations",
+    "tagline": "test \u00b7 development \u00b7 production",
+    "accent": "#7c5cff",
+    "footer": "generated 2026-06-12 19:52 UTC \u00b7 powered by sys-ops",
+    "map": {
+      "center": [
+        25,
+        10
+      ],
+      "zoom": 2,
+      "tiles": "auto"
+    },
+    "panels": {
+      "stats": true,
+      "map": true,
+      "nodes": true,
+      "dn42": true
+    }
+  },
+  "nodes": [
+    {
+      "name": "lab-sea",
+      "environment": "test",
+      "components": [
+        "dn42"
+      ],
+      "address": "203.0.113.10",
+      "status": "up",
+      "location": {
+        "lat": 47.606,
+        "lon": -122.332,
+        "label": "Seattle, US"
+      },
+      "dn42": {
+        "ownip": "172.20.0.1",
+        "ownip6": "fd00:1234::1",
+        "peers": [
+          {
+            "name": "alpha",
+            "asn": 4242421234,
+            "endpoint": "alpha.example.com:51820"
+          },
+          {
+            "name": "beta",
+            "asn": 4242425678,
+            "endpoint": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "lab-tyo",
+      "environment": "test",
+      "components": [
+        "dn42"
+      ],
+      "address": "203.0.113.20",
+      "status": "up",
+      "location": {
+        "lat": 35.676,
+        "lon": 139.65,
+        "label": "Tokyo, JP"
+      },
+      "dn42": {
+        "ownip": "172.20.0.2",
+        "ownip6": "fd00:1234::2",
+        "peers": [
+          {
+            "name": "gamma",
+            "asn": 4242429012,
+            "endpoint": "gamma.example.net:21080"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dev-fra",
+      "environment": "development",
+      "components": [],
+      "address": "203.0.113.30",
+      "status": "unknown",
+      "location": {
+        "lat": 50.11,
+        "lon": 8.682,
+        "label": "Frankfurt, DE"
+      }
+    },
+    {
+      "name": "web-nyc",
+      "environment": "production",
+      "components": [
+        "website"
+      ],
+      "address": "203.0.113.40",
+      "status": "up",
+      "location": {
+        "lat": 40.712,
+        "lon": -74.006,
+        "label": "New York, US"
+      }
+    }
+  ],
+  "links": [
+    {
+      "from": "lab-sea",
+      "to": "lab-tyo",
+      "type": "dn42",
+      "label": "dn42 mesh"
+    }
+  ]
+}

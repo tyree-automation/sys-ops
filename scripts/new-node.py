@@ -27,7 +27,7 @@ HOSTS_FILE = os.path.join(REPO_ROOT, "inventory", "hosts.yml")
 HOST_VARS_DIR = os.path.join(REPO_ROOT, "inventory", "host_vars")
 
 ENVIRONMENTS = ("test", "development", "production")
-COMPONENT_GROUPS = ("dn42",)
+COMPONENT_GROUPS = ("dn42", "website")
 LIFECYCLE_GROUPS = ("retiring",)
 
 HOSTS_HEADER = """\
@@ -41,6 +41,7 @@ HOSTS_HEADER = """\
 #
 # Component groups (optional, a node may be in any number):
 #   dn42         — node runs the dn42 router stack (WireGuard + BIRD2)
+#   website      — node serves the fleet dashboard (playbooks/website.yml)
 #
 # Lifecycle groups:
 #   retiring     — queued for playbooks/decommission.yml
@@ -171,6 +172,19 @@ def valid_port(value):
     return "enter a port number (1-65535)"
 
 
+def valid_coords(value):
+    parts = value.split(",")
+    if len(parts) != 2:
+        return "use lat,lon — e.g. 47.606,-122.332"
+    try:
+        lat, lon = float(parts[0]), float(parts[1])
+    except ValueError:
+        return "use lat,lon — e.g. 47.606,-122.332"
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return "latitude must be -90..90, longitude -180..180"
+    return None
+
+
 def make_ip_validator(version):
     def validate(value):
         try:
@@ -226,6 +240,16 @@ def write_host_vars(node):
         "# --- Components ---",
         f"tailscale_enabled: {'true' if node['tailscale'] else 'false'}",
     ]
+    if node.get("location"):
+        loc = node["location"]
+        lines += [
+            "",
+            "# --- Dashboard map position (scripts/build-site.py) ---",
+            "site_location:",
+            f"  lat: {loc['lat']}",
+            f"  lon: {loc['lon']}",
+            f"  label: \"{loc['label']}\"",
+        ]
     if node["dn42"]:
         lines += [
             "",
@@ -286,6 +310,23 @@ def main():
     print(dim("  The dn42 router stack (WireGuard + BIRD2 + ROA sync) is typically"))
     print(dim("  something you'd put on a test node, but it's available everywhere."))
     dn42 = ask_yes_no("Deploy the dn42 router stack on this node?", default=False)
+    print()
+    website = ask_yes_no(
+        "Serve the fleet web dashboard from this node (nginx)?", default=False
+    )
+
+    header("Map location")
+    print(dim("  Optional — places the node on the dashboard's world map."))
+    location = None
+    coords = ask(
+        "coordinates as lat,lon (blank to skip)",
+        required=False,
+        validate=valid_coords,
+    )
+    if coords:
+        lat, lon = (part.strip() for part in coords.split(","))
+        label = ask("location label (e.g. Seattle, US)", required=False)
+        location = {"lat": lat, "lon": lon, "label": label}
 
     node = {
         "name": name,
@@ -295,6 +336,8 @@ def main():
         "environment": environment,
         "tailscale": tailscale,
         "dn42": dn42,
+        "website": website,
+        "location": location,
     }
 
     if dn42:
@@ -314,10 +357,15 @@ def main():
     print(f"  node:        {bold(name)}")
     print(f"  ssh:         {ansible_user}@{ansible_host}:{ansible_port}")
     print(f"  environment: {environment}")
-    components = [n for n, on in (("tailscale", tailscale), ("dn42", dn42)) if on]
+    components = [
+        n for n, on in (("tailscale", tailscale), ("dn42", dn42), ("website", website)) if on
+    ]
     print(f"  components:  {', '.join(components) if components else dim('none')}")
     if dn42:
         print(f"  dn42 addrs:  {node['dn42_ownip']} / {node['dn42_ownip6']}")
+    if location:
+        print(f"  map:         {location['lat']},{location['lon']}"
+              + (f" ({location['label']})" if location['label'] else ""))
     print()
     if not ask_yes_no("Write inventory entries?", default=True):
         sys.exit("aborted — nothing written")
@@ -326,12 +374,14 @@ def main():
     children[environment]["hosts"][name] = None
     if dn42:
         children["dn42"]["hosts"][name] = None
+    if website:
+        children["website"]["hosts"][name] = None
     save_inventory(inventory)
     host_vars_path = write_host_vars(node)
 
+    groups = [environment] + [g for g, on in (("dn42", dn42), ("website", website)) if on]
     print()
-    print(green("✓") + f" inventory/hosts.yml updated ({environment}"
-          + (", dn42" if dn42 else "") + ")")
+    print(green("✓") + f" inventory/hosts.yml updated ({', '.join(groups)})")
     print(green("✓") + f" {os.path.relpath(host_vars_path, REPO_ROOT)} written")
 
     header("Next steps")
@@ -341,6 +391,11 @@ def main():
         print(f"   - add peerings under dn42_peers in inventory/host_vars/{name}.yml")
         print("   - onboarding prints the node's WireGuard public key — share it")
         print("     with your peers")
+    if website:
+        print(yellow("  dashboard checklist:"))
+        print("   - customize branding/panels in site.yml (once)")
+        print("   - build the dataset: scripts/build-site.py  (--probe for live status)")
+        print("   - deploy/refresh:    ansible-playbook playbooks/website.yml")
     if tailscale:
         print("   - pass the tailnet key at onboard time:")
         print(dim("       -e tailscale_authkey=tskey-auth-..."))

@@ -15,7 +15,9 @@
 #   4. security    — SSH hardening, fail2ban, firewall
 #   5. tailscale   — OPTIONAL: join the tailnet (tailscale_enabled host var)
 #   6. dn42        — OPTIONAL: dn42 router stack (node in the 'dn42' group)
-#   7. maintenance — full system update so it enters service current
+#   7. website     — OPTIONAL: fleet dashboard (node in the 'website' group;
+#                    run scripts/build-site.py before onboarding)
+#   8. maintenance — full system update so it enters service current
 # ===========================================================================
 - name: Onboard node for service life
   hosts: "{{ target_hosts | default('all') }}"
@@ -29,6 +31,8 @@
       when: tailscale_enabled | bool
     - role: dn42
       when: "'dn42' in group_names"
+    - role: website
+      when: "'website' in group_names"
     - maintenance
 
   post_tasks:
@@ -41,4 +45,5 @@
           environment {{ (group_names | intersect(['test', 'development', 'production']) | first) | default('none') }},
           timezone {{ time_timezone }},
           components: tailscale={{ 'on' if (tailscale_enabled | bool) else 'off' }},
-          dn42={{ 'on' if 'dn42' in group_names else 'off' }}.
+          dn42={{ 'on' if 'dn42' in group_names else 'off' }},
+          website={{ 'on' if 'website' in group_names else 'off' }}.

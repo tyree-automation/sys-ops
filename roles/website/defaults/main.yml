@@ -1,0 +1,9 @@
+---
+# Fleet dashboard deployment (nginx + the static site under web/).
+
+website_root: /var/www/sys-ops-dashboard
+# nginx server_name; "_" answers on any name.
+website_server_name: "_"
+website_listen_port: 80
+# Open the listen port in ufw (Debian-family; matches the security role).
+website_manage_firewall: "{{ security_firewall | default(true) }}"

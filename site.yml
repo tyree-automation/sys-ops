@@ -1,0 +1,44 @@
+# =============================================================================
+# Fleet dashboard customization — read by scripts/build-site.py.
+# Rebuild after changes:  scripts/build-site.py   (then redeploy with
+# ansible-playbook playbooks/website.yml, or preview with --serve)
+# =============================================================================
+
+# --- Branding ----------------------------------------------------------------
+title: "sys-ops"
+subtitle: "fleet operations"
+# Tagline shown under the title on the dashboard header.
+tagline: "test · development · production"
+# Accent color (any CSS color). Viewers can still override it live in the UI.
+accent: "#7c5cff"
+# Footer line (HTML allowed). {generated} expands to the build timestamp.
+footer: "generated {generated} · powered by sys-ops"
+
+# --- Privacy -------------------------------------------------------------------
+# Show SSH addresses / dn42 IPs in the node drawer. Disable if the dashboard
+# is published somewhere public.
+show_addresses: true
+
+# --- Map -----------------------------------------------------------------------
+map:
+  center: [25, 10]        # [lat, lon]
+  zoom: 2
+  # "dark" / "light" follow the UI theme using CARTO basemaps, or set a
+  # custom XYZ tile URL template.
+  tiles: auto
+  # Draw an animated full-mesh between your dn42 nodes:
+  mesh_links: true
+
+# --- Extra map links --------------------------------------------------------------
+# Custom links to draw besides the dn42 mesh, e.g. site-to-site tunnels.
+# from/to are node names; type colors the link (dn42 | vpn | custom).
+links: []
+#  - { from: web-01, to: lab-01, type: vpn, label: "wg site link" }
+
+# --- Panels ---------------------------------------------------------------------
+# Toggle dashboard sections.
+panels:
+  stats: true
+  map: true
+  nodes: true
+  dn42: true

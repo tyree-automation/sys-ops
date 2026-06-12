@@ -1,0 +1,19 @@
+---
+# Remove the dashboard from a node (decommission, or website.yml with
+# -e website_state=absent -e decommission_confirm=WIPE). Leaves nginx
+# installed in case other things use it; just removes our site.
+
+- name: Remove nginx site and web root
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/nginx/sites-enabled/sys-ops-dashboard.conf
+    - /etc/nginx/sites-available/sys-ops-dashboard.conf
+    - "{{ website_root }}"
+
+- name: Reload nginx if running
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+  failed_when: false
