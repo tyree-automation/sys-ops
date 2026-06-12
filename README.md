@@ -21,21 +21,52 @@ Supports Debian/Ubuntu and RHEL-family (Rocky, Alma, Fedora) hosts.
 # 1. Dependencies
 ansible-galaxy collection install -r requirements.yml
 
-# 2. Inventory
-cp inventory/hosts.example.yml inventory/hosts.yml   # edit hosts (gitignored)
+# 2. Add a server — interactive: asks name/location/env/role/address,
+#    generates the host ID + asset tag, writes inventory/hosts.yml,
+#    offers to commit+push and onboard in one go
+scripts/add-server.py
 
-# 3. Onboard a new machine
-ansible-playbook playbooks/onboard.yml -l web-01 \
+# 3. Onboard it (if you didn't let the script do it)
+ansible-playbook playbooks/onboard.yml -l nyc-prod-web01 \
   -e tailscale_authkey=tskey-auth-XXXX
 
 # 4. Routine maintenance (any time / scheduled)
 ansible-playbook playbooks/maintenance.yml
 
-# 5. End of life — requires the confirmation token
-ansible-playbook playbooks/decommission.yml -l web-01 \
+# 5. End of life — queue, wipe (requires confirmation token), drop
+scripts/add-server.py retire nyc-prod-web01
+ansible-playbook playbooks/decommission.yml -l nyc-prod-web01 \
   -e decommission_confirm=WIPE \
   -e decommission_revoke_ansible_access=true
+scripts/add-server.py remove nyc-prod-web01
 ```
+
+## Adding servers
+
+`scripts/add-server.py` is the front door for new machines. Run it bare for
+an interactive interview, or fully scripted:
+
+```bash
+scripts/add-server.py add --name web01 --location nyc --env prod \
+  --role web --address 192.0.2.10 --yes [--commit] [--onboard]
+scripts/add-server.py list
+scripts/add-server.py retire <host-id>   # move to the decommission queue
+scripts/add-server.py remove <host-id>   # delete after teardown
+```
+
+What it generates from your answers:
+
+- **Host ID** `<location>-<env>-<name>` (e.g. `nyc-prod-web01`) — editable
+  before writing; becomes the inventory hostname *and* the Tailscale
+  hostname, so the tailnet matches the inventory.
+- **Asset tag** `SYS-XXXXXX` — deterministic hash of name+location+address,
+  handy for labelling hardware that later gets sold off.
+- **Metadata hostvars** (`server_location`, `server_env`, `server_role`,
+  `added_on`) usable in playbook conditionals and audits.
+
+`inventory/hosts.yml` is committed to git by design so the script's changes
+flow to Semaphore (File-type inventory). If you don't want addresses in git,
+see the note in `.gitignore`.
 
 ## Semaphore UI
 
@@ -71,8 +102,10 @@ Notable safety behaviors:
 ```
 ansible.cfg               # sane defaults; inventory + roles paths
 requirements.yml          # ansible.posix, community.general
+scripts/
+  add-server.py           # interactive add/list/retire/remove for the fleet
 inventory/
-  hosts.example.yml       # copy to hosts.yml (gitignored)
+  hosts.yml               # the fleet — managed by add-server.py, committed
   group_vars/all.yml      # fleet-wide policy
 playbooks/
   audit.yml  onboard.yml  maintenance.yml  decommission.yml

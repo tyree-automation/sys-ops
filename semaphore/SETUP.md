@@ -35,11 +35,16 @@ playbooks/roles take effect on the next run automatically. It also installs
 
 ## 4. Inventory
 
-Create an Inventory of type **Static (YAML)** and paste your fleet (same
-shape as `inventory/hosts.example.yml`), or use type **File** pointing at a
-committed inventory file. Set **User Credentials** to `fleet-ssh`.
+Create an Inventory of type **File** pointing at `inventory/hosts.yml` and
+set **User Credentials** to `fleet-ssh`. That file is committed and managed
+by `scripts/add-server.py`, so adding a server locally and pushing makes it
+appear in Semaphore on the next task run — no UI edits needed.
 
-> Keep the `retiring` group: moving a host there is the queue for teardown.
+(Alternative: type **Static (YAML)** with the fleet pasted into the UI, if
+you prefer to keep addresses out of git. You then maintain it by hand.)
+
+> Keep the `retiring` group: moving a host there
+> (`scripts/add-server.py retire <host-id>`) is the queue for teardown.
 
 ## 5. Variable Group (environment + secrets)
 
@@ -84,12 +89,16 @@ Optional booleans to expose as survey vars:
 
 ## 7. Suggested lifecycle flow
 
-1. **Provision** — image the machine, ensure root/key SSH access, add it to
-   the inventory.
-2. **Onboard** — run the Onboard template against the new host. It comes out
-   updated, time-synced, hardened, on the tailnet, and ready for its service.
+1. **Provision** — image the machine, ensure root/key SSH access, then run
+   `scripts/add-server.py`: it interviews you about the server, generates the
+   host ID + asset tag, writes `inventory/hosts.yml`, and commits/pushes so
+   Semaphore sees it.
+2. **Onboard** — run the Onboard template against the new host (the script
+   offers to do this directly too). It comes out updated, time-synced,
+   hardened, on the tailnet, and ready for its service.
 3. **Service life** — weekly Maintenance schedule keeps it patched; Audit
    shows fleet health on demand.
-4. **End of life** — move the host to the `retiring` group, run Decommission
-   with `decommission_confirm=WIPE`, then remove it from the Tailscale admin
-   console and the Semaphore inventory.
+4. **End of life** — `scripts/add-server.py retire <host-id>`, run
+   Decommission with `decommission_confirm=WIPE`, then
+   `scripts/add-server.py remove <host-id>` and delete the machine from the
+   Tailscale admin console.

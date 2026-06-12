@@ -1,6 +1,8 @@
 # Real inventory may contain hostnames/IPs you don't want in git.
-# Copy inventory/hosts.example.yml to inventory/hosts.yml for local CLI use.
-inventory/hosts.yml
+# inventory/hosts.yml is committed by design (private repo assumed) so that
+# scripts/add-server.py changes flow to Semaphore. If you'd rather keep it
+# out of git, add "inventory/hosts.yml" here and use a Semaphore static
+# inventory instead.
 
 # Ansible artifacts
 *.retry
