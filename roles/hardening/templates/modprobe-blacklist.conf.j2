@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+{% set modules = hardening_blacklist_modules + (['usb-storage'] if hardening_blacklist_usb_storage | bool else []) %}
+{% for module in modules %}
+install {{ module }} /bin/false
+blacklist {{ module }}
+{% endfor %}

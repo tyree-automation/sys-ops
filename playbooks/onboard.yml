@@ -4,22 +4,23 @@
 #
 #   ansible-playbook playbooks/onboard.yml -l <node>
 #
-# Register the node first with scripts/new-node.py — it writes the
-# inventory entry, host_vars, and component choices, then offers to run
-# this playbook for you.
+# Register the node first with scripts/add-server.py — it writes the
+# CLLI inventory entry and offers to run this playbook for you.
 #
 # What it does, in order:
-#   1. base        — hostname, base packages, unattended security upgrades
+#   1. base        — hostname, packages, MOTD, journald, swap, auto-upgrades
 #   2. time_sync   — timezone + chrony NTP
 #   3. users       — managed users, SSH keys, sudo
 #   4. security    — SSH hardening, fail2ban, firewall
-#   5. tailscale   — OPTIONAL: join the tailnet (tailscale_enabled host var)
-#   6. dn42        — OPTIONAL: dn42 router stack (node in the 'dn42' group)
-#   7. website     — OPTIONAL: fleet dashboard (node in the 'website' group;
+#   5. hardening   — sysctls, module blacklist, core dumps, services, auditd
+#   6. tailscale   — OPTIONAL: join the tailnet (tailscale_enabled)
+#   7. dn42        — OPTIONAL: dn42 router stack (node in the 'dn42' group)
+#   8. peering_api — OPTIONAL: auto-peering API (node in the 'autopeer' group)
+#   9. website     — OPTIONAL: fleet dashboard (node in the 'website' group;
 #                    run scripts/build-site.py before onboarding)
-#   8. maintenance — full system update so it enters service current
+#  10. maintenance — full system update so it enters service current
 # ===========================================================================
-- name: Onboard node for service life
+- name: Onboard server for service life
   hosts: "{{ target_hosts | default('all') }}"
   become: true
   roles:
@@ -27,6 +28,7 @@
     - time_sync
     - users
     - security
+    - hardening
     - role: tailscale
       when: tailscale_enabled | bool
     - role: dn42
@@ -44,7 +46,6 @@
           {{ inventory_hostname }} onboarded:
           {{ ansible_distribution }} {{ ansible_distribution_version }},
           kernel {{ ansible_kernel }},
-          environment {{ (group_names | intersect(['test', 'development', 'production']) | first) | default('none') }},
           timezone {{ time_timezone }},
           components: tailscale={{ 'on' if (tailscale_enabled | bool) else 'off' }},
           dn42={{ 'on' if 'dn42' in group_names else 'off' }},

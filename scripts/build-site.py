@@ -98,16 +98,26 @@ def collect_nodes():
     inventory = load_yaml(HOSTS_FILE, {})
     children = ((inventory.get("all") or {}).get("children")) or {}
     memberships = {}
+    inline_vars = {}
     for group, group_data in children.items():
-        for host in (group_data or {}).get("hosts") or {}:
+        for host, hvars in ((group_data or {}).get("hosts") or {}).items():
             memberships.setdefault(host, set()).add(group)
+            if hvars:
+                inline_vars.setdefault(host, {}).update(hvars)
 
     nodes = []
     for host, groups in sorted(memberships.items()):
-        host_vars = load_yaml(os.path.join(HOST_VARS_DIR, f"{host}.yml"), {}) or {}
+        # Inventory inline vars (written by add-server.py: ansible_host,
+        # server_env, clli, ...) merged with any per-node host_vars/<node>.yml
+        # (dn42 addressing, peers, map location).
+        host_vars = dict(inline_vars.get(host, {}))
+        host_vars.update(load_yaml(os.path.join(HOST_VARS_DIR, f"{host}.yml"), {}) or {})
         node = {
             "name": host,
-            "environment": next((e for e in ENVIRONMENTS if e in groups), "unassigned"),
+            "environment": str(
+                host_vars.get("server_env")
+                or next((e for e in ENVIRONMENTS if e in groups), "unassigned")
+            ),
             "components": sorted(g for g in groups if g in COMPONENT_GROUPS),
             "address": str(host_vars.get("ansible_host", "")),
             "status": "unknown",

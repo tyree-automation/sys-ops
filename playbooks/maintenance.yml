@@ -1,6 +1,6 @@
 ---
 # ===========================================================================
-# MAINTENANCE — recurring upkeep. Schedule it (e.g. weekly cron).
+# MAINTENANCE — recurring upkeep. Schedule this in Semaphore (e.g. weekly).
 #
 #   ansible-playbook playbooks/maintenance.yml
 #   ansible-playbook playbooks/maintenance.yml -e maintenance_reboot_if_required=true

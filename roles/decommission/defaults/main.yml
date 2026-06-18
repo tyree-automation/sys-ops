@@ -1,11 +1,13 @@
 ---
 # HARD SAFETY GATE: the play refuses to run unless this equals "WIPE".
 # Pass at runtime: -e decommission_confirm=WIPE
+# In Semaphore: required survey variable the operator types every run.
 decommission_confirm: ""
 
 # Per-step toggles — default to a full teardown.
 decommission_remove_tailscale: true
 decommission_revert_security: true     # ssh drop-in, fail2ban, firewall
+decommission_revert_hardening: true    # sysctls, blacklists, swap, motd, auditd
 decommission_remove_users: true        # managed_users + sudoers entries
 decommission_remove_packages: true     # packages installed at onboarding
 decommission_clear_logs: true          # journals, login records, histories

@@ -1,214 +1,198 @@
-# sys-ops — fleet lifecycle management
+# sys-ops — server lifecycle platform
 
-One Ansible repo that manages every node you run — **test**, **development**
-and **production** — through its whole life: **onboard → maintain →
-decommission**, with optional components (Tailscale, a dn42 router stack,
-a fleet web dashboard) chosen per node at onboarding time.
+Ansible automation covering a server's whole life: **onboard → maintain →
+decommission**, driven manually from the CLI or as scheduled jobs in
+[Semaphore UI](https://semaphoreui.com/).
 
-Base lifecycle supports Debian/Ubuntu and RHEL-family (Rocky, Alma, Fedora)
-hosts; the dn42 component is Debian-family only.
-
-## Quick start
-
-```console
-$ ansible-galaxy collection install -r requirements.yml
-$ scripts/new-node.py            # interactive: register a node
-$ ansible-playbook playbooks/onboard.yml -l <node>
-```
-
-`scripts/new-node.py` is the front door for adding machines. It asks for:
-
-1. **Node identity** — inventory name, SSH address/user/port
-2. **Environment** — `test`, `development` or `production` (sets the
-   maintenance policy via `inventory/group_vars/<env>.yml`)
-3. **Optional components** — join the tailnet? deploy the dn42 router
-   stack? serve the fleet web dashboard? (dn42 is typically a test-node
-   thing, but any node can opt in)
-4. **Map location** — optional lat/lon so the node shows on the
-   dashboard's world map
-
-…then writes `inventory/hosts.yml` + `inventory/host_vars/<node>.yml`,
-prints a per-component checklist, and offers to run the onboarding
-playbook on the spot. Nothing is installed on a node unless you opted in.
+Supports Debian/Ubuntu and RHEL-family (Rocky, Alma, Fedora) hosts.
 
 ## The lifecycle
 
 | Stage | Playbook | What it does |
 |---|---|---|
 | **Audit** | `playbooks/audit.yml` | Read-only health report: NTP sync, pending reboot, tailscale state, failed units, disk/memory. |
-| **Onboard** | `playbooks/onboard.yml` | Full system update, base packages, unattended security upgrades, timezone + chrony NTP, managed users + SSH keys + sudo, SSH hardening, fail2ban, firewall (ufw/firewalld), then any components the node opted into. |
-| **Maintain** | `playbooks/maintenance.yml` | Update all packages, autoremove orphans, clean caches, vacuum journals, health summary, optional auto-reboot when required. Schedule it (e.g. weekly cron). |
-| **Decommission** | `playbooks/decommission.yml` | Teardown to near-factory default (components first, then base). Gated: refuses to run without `-e decommission_confirm=WIPE`. |
+| **Onboard** | `playbooks/onboard.yml` | Full system update, base packages (git, curl, …), unattended security upgrades, hostname + CLLI login banner, persistent capped journald, optional swap file, timezone + chrony NTP, managed users + SSH keys + sudo, SSH hardening, fail2ban, firewall (ufw/firewalld), system hardening (see below), Tailscale install + tailnet join. The machine comes out ready for its service life. |
+| **Maintain** | `playbooks/maintenance.yml` | Update all packages, autoremove orphans, clean caches, vacuum journals, health summary, optional auto-reboot when required. Schedule this weekly in Semaphore. |
+| **Decommission** | `playbooks/decommission.yml` | Tear everything back down to (near) factory default: leave + uninstall Tailscale, revert hardening, remove firewall/fail2ban, delete managed users, remove onboarded packages, wipe logs/histories, reset machine-id, optionally regenerate SSH host keys and revoke Ansible's own access. Ready to redeploy or sell. |
 
-## Inventory layout
+## Quick start (CLI)
+
+```bash
+# 1. Dependencies
+ansible-galaxy collection install -r requirements.yml
+
+# 2. Add a server — interactive: asks name/place/region/site/role/address,
+#    generates a CLLI-style host ID + asset tag, writes inventory/hosts.yml,
+#    offers to commit+push and onboard in one go
+scripts/add-server.py
+
+# 3. Onboard it (if you didn't let the script do it)
+ansible-playbook playbooks/onboard.yml -l nycmnydcw01 \
+  -e tailscale_authkey=tskey-auth-XXXX
+
+# 4. Routine maintenance (any time / scheduled)
+ansible-playbook playbooks/maintenance.yml
+
+# 5. End of life — queue, wipe (requires confirmation token), drop
+scripts/add-server.py retire nycmnydcw01
+ansible-playbook playbooks/decommission.yml -l nycmnydcw01 \
+  -e decommission_confirm=WIPE \
+  -e decommission_revoke_ansible_access=true
+scripts/add-server.py remove nycmnydcw01
+```
+
+## Adding servers
+
+`scripts/add-server.py` is the front door for new machines. Run it bare for
+an interactive interview, or fully scripted:
+
+```bash
+scripts/add-server.py add --name web01 --place NYCM --region NY \
+  --site DC --role web --address 192.0.2.10 --yes [--commit] [--onboard]
+scripts/add-server.py list
+scripts/add-server.py retire <host-id>   # move to the decommission queue
+scripts/add-server.py remove <host-id>   # delete after teardown
+```
+
+### CLLI host IDs
+
+Host IDs follow a CLLI-style scheme (the telecom **Common Language Location
+Identifier**): 11 characters encoding where and what the machine is.
 
 ```
-inventory/
-├── hosts.yml              # groups only — managed by scripts/new-node.py
-├── group_vars/
-│   ├── all.yml            # fleet-wide policy
-│   ├── test.yml           # per-environment policy overrides
-│   ├── development.yml
-│   ├── production.yml
-│   └── dn42.yml           # dn42 network identity (ASN, prefixes)
-└── host_vars/
-    └── <node>.yml         # per-node: SSH details, component flags, dn42 peers
+N Y C M   N Y   D C   W 0 1     →  NYCMNYDCW01 (inventory id: nycmnydcw01)
+└─place─┘ └rgn┘ └site┘ └entity┘
 ```
 
-Every node is in exactly one **environment group** (`test`, `development`,
-`production`) and any number of **component groups** (`dn42`, `website`).
-Moving a node to the `retiring` group queues it for decommissioning.
+| Field | Size | Meaning | Examples |
+|---|---|---|---|
+| place | 4 letters | city/locality abbreviation | `NYCM` (NY Manhattan), `HSTN` (Houston), `FRNK` (Frankfurt) |
+| region | 2 letters | US state or ISO country | `NY`, `TX`, `DE`, `NL` |
+| site | 2 alnum | building/DC within the place | `DC`, `01`, `AA` |
+| entity | 3 chars | role class letter + sequence | `W01` = web #1, `D03` = db #3 |
+
+Role class letters: `W`=web `D`=db `A`=app `C`=cache `S`=storage
+`N`=network `M`=monitoring `B`=backup `V`=virt `G`=generic (custom roles
+use their first letter). The sequence number is auto-assigned — the next
+free number for that role at that site — and editable before writing.
+
+What you get per host:
+
+- **Host ID** — the lowercase CLLI (e.g. `nycmnydcw01`); also becomes the
+  Tailscale hostname, so the tailnet matches the inventory.
+- **Asset tag** `SYS-XXXXXX` — deterministic hash of CLLI+address, handy
+  for labelling hardware that later gets sold off.
+- **Detailed hostvars** — `clli`, `clli_place`, `clli_region`, `clli_site`,
+  `clli_entity`, `server_name`, `server_env`, `server_role`, `added_on` —
+  usable in playbook conditionals, audits, and reports
+  (`scripts/add-server.py list` shows the fleet by place/region/site).
+
+`inventory/hosts.yml` is committed to git by design so the script's changes
+flow to Semaphore (File-type inventory). If you don't want addresses in git,
+see the note in `.gitignore`.
+
+## Semaphore UI
+
+Everything is designed to run from Semaphore: templates map 1:1 to the four
+playbooks, secrets (Tailscale auth key, SSH keys) live in Semaphore's
+encrypted key store, maintenance runs on a cron schedule, and decommission is
+gated behind a survey variable the operator must type (`WIPE`).
+
+A ready-to-run `docker-compose.yml` for the Semaphore server and the full
+wiring guide are in [`semaphore/SETUP.md`](semaphore/SETUP.md).
 
 ## Optional components
 
-### Tailscale
+Beyond the base lifecycle, a node can opt into extra components by joining
+**component groups** (in addition to its role group). `add-server.py` asks
+which ones during onboarding (or pass `--components dn42,website,autopeer`),
+and `onboard.yml` turns on the matching role; `decommission.yml` tears them
+down first.
 
-Opt in per node with `tailscale_enabled: true` in its host_vars (the
-new-node script sets this for you). Pass the auth key at runtime — never
-commit it:
+| Component | Group | What it deploys |
+|---|---|---|
+| **dn42 router** | `dn42` | WireGuard tunnels + BIRD2 + ROA sync (`roles/dn42`). Network identity (ASN, prefixes) goes in `inventory/group_vars/dn42.yml`; per-node addressing and peers go in `inventory/host_vars/<node>.yml` (a stub is written automatically). Reconfigure with `playbooks/dn42.yml`. |
+| **Auto-peering API** | `autopeer` | HTTP API that accepts/queues dn42 peering requests (`roles/peering_api`). Requires `dn42` on the same node; review queued requests with `scripts/peering-requests.py`. |
+| **Fleet dashboard** | `website` | nginx serving the static dashboard in `web/` with an animated network map (`roles/website`). Build the dataset first with `scripts/build-site.py` (reads the inventory + `site.yml`); it emits a **public** dn42-only dataset and an **internal** full-fleet dataset, and each website node serves exactly one via its `website_mode` host var. |
 
-```console
-$ ansible-playbook playbooks/onboard.yml -l <node> -e tailscale_authkey=tskey-auth-...
-```
+dn42 requires your own ASN and address space from the
+[dn42 registry](https://dn42.dev/howto/Getting-Started) before first use.
 
-### dn42 router
+## Hardening
 
-A self-contained [dn42](https://dn42.dev/) router: WireGuard point-to-point
-tunnels, BIRD2 with the standard dn42 import/export filters, and ROA
-validation kept fresh by a systemd timer. This replaces the old standalone
-`ansible-dn42` repo — redesigned from scratch, shipping **no peering data**;
-you bring your own ASN, prefixes and peers.
+Onboarding applies OS-agnostic hardening across both distro families, all
+individually toggleable (see `roles/hardening/defaults/main.yml` and the
+security vars in `inventory/group_vars/all.yml`):
 
-One-time setup — register with the dn42 registry
-([Getting started](https://dn42.dev/howto/Getting-Started)), then put your
-ASN and prefixes in `inventory/group_vars/dn42.yml`.
+- **Kernel/network sysctls** — syncookies, redirect/source-route rejection,
+  martian logging, `kptr_restrict`, `dmesg_restrict`, ptrace scope,
+  unprivileged BPF off, protected hard/symlinks/fifos, no setuid core dumps.
+  Reverse-path filtering is set to *loose* (2) on purpose — strict mode
+  breaks Tailscale exit nodes and subnet routers. Override any key via
+  `hardening_sysctl_extra`.
+- **SSH** — beyond key-only auth: no agent/TCP forwarding, no host-based
+  auth, login grace 30s, connection limits, and modern-only KEX/cipher/MAC
+  algorithms (`security_ssh_modern_crypto`, needs OpenSSH 7.4+ clients).
+- **Kernel module blacklist** — uncommon filesystems (cramfs, hfs, udf, …)
+  and network protocols (dccp, sctp, rds, tipc); USB mass storage blocking
+  is opt-in (`hardening_blacklist_usb_storage`).
+- **Core dumps disabled** — limits.d + `fs.suid_dumpable=0`.
+- **Unneeded services masked** — avahi, cups, rpcbind, bluetooth (only when
+  actually present on the host).
+- **auditd** — kernel audit trail with distro default rules.
 
-Per node — opt in via the new-node script (it asks for the node's dn42
-IPv4/IPv6 and adds it to the `dn42` group), then add peerings in
-`inventory/host_vars/<node>.yml`:
+Decommission reverts all of it (`decommission_revert_hardening`).
 
-```yaml
-dn42_peers:
-  - name: example                          # interface dn42-example
-    asn: 4242421234
-    wg_pubkey: "their-wireguard-pubkey="
-    wg_endpoint: "peer.example.com:51820"  # omit for passive peers
-    peer_v6: "fe80::1234"                  # MP-BGP over link-local (default)
-```
+## Configuration
 
-Deploy / reconfigure after any peer change:
+Fleet policy lives in `inventory/group_vars/all.yml` (timezone, NTP pools,
+package list, users, SSH/firewall policy, tailscale flags). Every value can
+be overridden per group/host or at runtime via `-e` / Semaphore variable
+groups. Role-level defaults and documentation for each knob are in
+`roles/*/defaults/main.yml`.
 
-```console
-$ ansible-playbook playbooks/dn42.yml -l <node>
-```
+Notable safety behaviors:
 
-Onboarding prints the node's WireGuard public key — share it with peers.
-Tunnels listen on `20000 + (peer ASN mod 10000)` unless a peer sets
-`wg_listen_port`. Remove the stack from a node without decommissioning it:
+- **Decommission hard gate** — refuses to run unless
+  `decommission_confirm=WIPE` is passed; every teardown step also has its own
+  toggle.
+- **Lockout protection** — `security_ssh_password_auth: "no"` is only safe
+  once key access works; the decommission role never deletes the user it is
+  connected as, and revoking Ansible's own key is opt-in and runs last.
+- **Secrets** — `tailscale_authkey` is never logged (`no_log`) and should be
+  supplied via Semaphore secret variables or `-e`, never committed.
 
-```console
-$ ansible-playbook playbooks/dn42.yml -l <node> -e dn42_state=absent -e decommission_confirm=WIPE
-```
-
-### Fleet web dashboard
-
-A modern, self-hosted dashboard for the whole fleet — the successor to the
-old ansible-dn42 splash site (highdef.network), rebuilt from scratch:
-
-- **animated world map** (Leaflet) — pulsing node markers colored by
-  environment, curved animated arcs for the dn42 mesh and any custom links
-- **fleet stats** with count-up animations, environment filter pills,
-  live node search
-- **node cards + detail drawer** — status, components, dn42 addressing,
-  peering list, copy-ready playbook commands per node
-- **dn42 peering table** across the fleet
-- **customizable**: branding, tagline, accent color, footer, map
-  center/zoom/tiles, panel toggles and custom map links all live in
-  `site.yml`; viewers get a live accent-color picker and dark/light
-  toggle in the UI
-
-It's a static site (`web/`) fed by a generated dataset — no backend, no
-API keys. Node positions come from the optional map location asked by
-`scripts/new-node.py` (stored as `site_location` in host_vars).
-
-**Public vs internal.** Every build produces two datasets, and each
-website node serves exactly one (its `website_mode` host var, chosen in
-the new-node script — default `public`):
-
-- `public` — **dn42 information only**: routers, locations, status, dn42
-  addressing, peerings, and the "peer with me" card from the `public:`
-  section of `site.yml`. No environments, SSH addresses, components, or
-  ops commands — that data isn't in the file at all, so a public host
-  physically never receives it.
-- `internal` — the full fleet view. Deploy only on trusted networks
-  (e.g. behind Tailscale).
-
-```console
-$ scripts/build-site.py                  # -> build/fleet-{public,internal}.json
-$ scripts/build-site.py --probe          # also ping nodes for up/down status
-$ scripts/build-site.py --serve          # preview the public site on :8080
-$ scripts/build-site.py --serve --mode internal   # preview the internal site
-$ ansible-playbook playbooks/website.yml # deploy to the 'website' group
-```
-
-Re-run `build-site.py` + `website.yml` whenever the fleet changes (a
-cron/CI job works well).
-
-### Automatic peering (dn42)
-
-Other dn42 operators can request a peering straight from the public
-dashboard — like the auto-peering portals on dn42, but driven by your
-inventory. Opt a dn42 node in via the new-node script (or add it to the
-`autopeer` group) and it runs a small API (`roles/peering_api`, stdlib
-Python, port 8042 — proxied at `/api/` when the node also serves the
-dashboard):
-
-- `GET /api/peering/info` — your ASN, the node's WireGuard public key,
-  endpoint and port scheme
-- `POST /api/peering/request` — strictly validated (dn42 ASN range, key
-  and link-local formats, duplicate/port checks, per-IP and queue rate
-  limits) and checked against a dn42 registry explorer, then queued
-
-Review queued requests from your control machine — approving writes the
-peer into the node's `dn42_peers` (git stays the source of truth) and
-deploys it:
-
-```console
-$ scripts/peering-requests.py list
-$ scripts/peering-requests.py show    lab-01 20260612...-as4242421234
-$ scripts/peering-requests.py approve lab-01 20260612...-as4242421234
-$ scripts/peering-requests.py reject  lab-01 20260612...-as4242421234
-```
-
-**Instant mode:** set `peering_api_auto_apply: true` (host_vars) and
-valid requests are configured live on the spot — tunnel under a separate
-`dn42a-*` prefix plus a BIRD session in `/etc/bird/peers/`, untouched by
-Ansible until you `approve` the request, which migrates it to a managed
-peer. Caveat: the registry check only confirms the ASN exists, not that
-the requester owns it — leave auto-apply off unless you accept that
-(it's reasonable on a test node).
-
-## Decommissioning
-
-```console
-$ ansible-playbook playbooks/decommission.yml -l <node> -e decommission_confirm=WIPE
-```
-
-Removes components (dn42, tailscale), security hardening, managed users,
-onboarding packages, logs and machine-id — each step has its own toggle in
-`roles/decommission/defaults/main.yml`. Without the `WIPE` token it refuses
-to act. Afterwards, delete the node from `inventory/hosts.yml` and remove
-its `host_vars` file.
-
-## Repo layout
+## Repository layout
 
 ```
-playbooks/        audit, onboard, maintenance, decommission, dn42, website
-roles/            base, time_sync, users, security, tailscale, maintenance,
-                  decommission, dn42, website
-scripts/          new-node.py — interactive node registration
-                  build-site.py — build the fleet dashboard dataset
-web/              fleet dashboard (static site, generated data in web/data/)
-site.yml          dashboard customization (branding, map, panels)
-inventory/        hosts.yml, group_vars, host_vars
+ansible.cfg               # sane defaults; inventory + roles paths
+requirements.yml          # ansible.posix, community.general
+scripts/
+  add-server.py           # interactive add/list/retire/remove for the fleet
+  build-site.py           # build the dashboard dataset from the inventory
+  peering-requests.py     # review the auto-peering API's request queue
+inventory/
+  hosts.yml               # the fleet — managed by add-server.py, committed
+  group_vars/all.yml      # fleet-wide policy
+  group_vars/dn42.yml     # dn42 network identity (ASN, prefixes)
+  host_vars/<node>.yml    # per-node settings (e.g. dn42 addressing/peers)
+playbooks/
+  audit.yml  onboard.yml  maintenance.yml  decommission.yml
+  dn42.yml  website.yml   # (re)configure optional components
+roles/
+  base/          # hostname, packages, motd, journald, swap, unattended-upgrades
+  time_sync/     # timezone + chrony NTP
+  users/         # managed users, ssh keys, sudo
+  security/      # sshd hardening, fail2ban, ufw/firewalld
+  hardening/     # sysctls, module blacklist, core dumps, services, auditd
+  tailscale/     # install + join tailnet
+  maintenance/   # updates, cleanup, reboot handling, health report
+  decommission/  # full teardown to factory default
+  dn42/          # OPTIONAL: WireGuard + BIRD2 dn42 router + ROA sync
+  peering_api/   # OPTIONAL: automatic dn42 peering API
+  website/       # OPTIONAL: nginx fleet dashboard
+web/             # static dashboard assets (served by the website role)
+site.yml         # dashboard customization (read by build-site.py)
+semaphore/
+  docker-compose.yml  .env.example  SETUP.md
 ```

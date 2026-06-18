@@ -5,6 +5,6 @@ maintenance_journal_vacuum_time: "14d"
 
 # Reboot automatically when the OS reports a reboot is required.
 # Keep false for ad-hoc runs; consider true for the scheduled
-# maintenance window.
+# Semaphore maintenance window.
 maintenance_reboot_if_required: false
 maintenance_reboot_timeout: 600

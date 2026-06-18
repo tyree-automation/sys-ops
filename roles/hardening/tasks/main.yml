@@ -1,0 +1,61 @@
+---
+# --- Kernel / network sysctls ----------------------------------------------
+- name: Install hardening sysctls
+  ansible.builtin.template:
+    src: sysctl.conf.j2
+    dest: /etc/sysctl.d/99-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: hardening_sysctl_enabled | bool
+  notify: Apply sysctl
+
+# --- Uncommon kernel modules --------------------------------------------------
+- name: Blacklist uncommon kernel modules
+  ansible.builtin.template:
+    src: modprobe-blacklist.conf.j2
+    dest: /etc/modprobe.d/99-hardening-blacklist.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: hardening_blacklist_enabled | bool
+
+# --- Core dumps -----------------------------------------------------------------
+- name: Disable core dumps
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/99-hardening-core.conf
+    content: |
+      * hard core 0
+      * soft core 0
+    owner: root
+    group: root
+    mode: "0644"
+  when: hardening_disable_core_dumps | bool
+
+# --- Unneeded services ------------------------------------------------------------
+- name: Gather service facts
+  ansible.builtin.service_facts:
+  when: hardening_disable_services | length > 0
+
+- name: Stop, disable and mask unneeded services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+    masked: true
+  loop: "{{ hardening_disable_services }}"
+  when: (item ~ '.service') in ansible_facts.services
+
+# --- Audit daemon -------------------------------------------------------------------
+- name: Install auditd
+  ansible.builtin.package:
+    name: "{{ 'audit' if ansible_os_family == 'RedHat' else 'auditd' }}"
+    state: present
+  when: hardening_auditd | bool
+
+- name: Enable and start auditd
+  ansible.builtin.systemd_service:
+    name: auditd
+    state: started
+    enabled: true
+  when: hardening_auditd | bool

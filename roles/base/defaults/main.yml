@@ -13,10 +13,23 @@ base_packages:
   - python3
 base_extra_packages: []
 
-# Set to true (and set base_hostname) to manage the hostname.
-base_manage_hostname: false
+# Set the system hostname to the inventory name (the lowercase CLLI),
+# keeping machine, inventory and tailnet names aligned.
+base_manage_hostname: true
 base_hostname: "{{ inventory_hostname }}"
 
 # Debian/Ubuntu only: enable automatic security updates between
 # maintenance runs.
 base_enable_unattended_upgrades: true
+
+# Login banner showing CLLI / role / env / asset tag.
+base_motd_enabled: true
+
+# Persistent journal with a size cap (survives reboots, bounded disk use).
+base_manage_journald: true
+base_journald_max_use: "500M"
+
+# Swap file — set a size to enable (recommended on small-RAM VPSes).
+base_swap_size_mb: 0
+base_swap_path: /swapfile
+base_swappiness: 10

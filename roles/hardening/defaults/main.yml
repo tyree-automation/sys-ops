@@ -1,0 +1,72 @@
+---
+# OS-agnostic system hardening (Debian and RHEL families). Each section
+# has its own toggle; everything is reverted by the decommission role.
+
+# --- Kernel / network sysctls ----------------------------------------------
+hardening_sysctl_enabled: true
+# Merged over (and overriding) hardening_sysctl_defaults below.
+hardening_sysctl_extra: {}
+hardening_sysctl_defaults:
+  # network: spoofing / redirect / source-route protection
+  net.ipv4.tcp_syncookies: 1
+  # loose (2) instead of strict (1): strict rp_filter breaks tailscale
+  # exit nodes and subnet routers
+  net.ipv4.conf.all.rp_filter: 2
+  net.ipv4.conf.default.rp_filter: 2
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv4.conf.all.secure_redirects: 0
+  net.ipv4.conf.all.send_redirects: 0
+  net.ipv4.conf.default.send_redirects: 0
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  net.ipv4.conf.all.log_martians: 1
+  net.ipv4.icmp_echo_ignore_broadcasts: 1
+  net.ipv4.icmp_ignore_bogus_error_responses: 1
+  net.ipv6.conf.all.accept_redirects: 0
+  net.ipv6.conf.default.accept_redirects: 0
+  net.ipv6.conf.all.accept_source_route: 0
+  # kernel: information exposure and attack surface
+  kernel.kptr_restrict: 2
+  kernel.dmesg_restrict: 1
+  kernel.sysrq: 0
+  kernel.yama.ptrace_scope: 1
+  kernel.unprivileged_bpf_disabled: 1
+  net.core.bpf_jit_harden: 2
+  # filesystem: link/fifo protections, no setuid core dumps
+  fs.protected_hardlinks: 1
+  fs.protected_symlinks: 1
+  fs.protected_fifos: 2
+  fs.protected_regular: 2
+  fs.suid_dumpable: 0
+
+# --- Uncommon kernel modules (filesystems + network protocols) ---------------
+hardening_blacklist_enabled: true
+hardening_blacklist_modules:
+  - cramfs
+  - freevxfs
+  - jffs2
+  - hfs
+  - hfsplus
+  - udf
+  - dccp
+  - sctp
+  - rds
+  - tipc
+# Opt-in: block USB mass storage (physical-access data exfiltration).
+hardening_blacklist_usb_storage: false
+
+# --- Core dumps ---------------------------------------------------------------
+hardening_disable_core_dumps: true
+
+# --- Services with no business on a headless server ----------------------------
+# Stopped, disabled and masked when present; silently skipped when absent.
+hardening_disable_services:
+  - avahi-daemon
+  - cups
+  - rpcbind
+  - bluetooth
+
+# --- Audit daemon ----------------------------------------------------------------
+# Kernel audit trail (logins, sudo, identity changes) with distro default rules.
+hardening_auditd: true

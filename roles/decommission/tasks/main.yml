@@ -12,7 +12,7 @@
     fail_msg: >-
       Refusing to decommission {{ inventory_hostname }}.
       Re-run with -e decommission_confirm=WIPE
-      to proceed.
+      (or set the survey variable in Semaphore) to proceed.
 
 # --- Tailscale ----------------------------------------------------------------
 - name: Remove tailscale
@@ -85,6 +85,51 @@
     path: /etc/apt/apt.conf.d/20auto-upgrades
     state: absent
   when: ansible_os_family == "Debian"
+
+# --- Hardening and tuning rollback ----------------------------------------------
+- name: Revert hardening and system tuning
+  when: decommission_revert_hardening | bool
+  block:
+    - name: Disable swap file
+      ansible.builtin.command: "swapoff {{ base_swap_path | default('/swapfile') }}"
+      failed_when: false
+      changed_when: true
+
+    - name: Remove swap from fstab
+      ansible.posix.mount:
+        src: "{{ base_swap_path | default('/swapfile') }}"
+        path: none
+        fstype: swap
+        state: absent
+
+    - name: Remove hardening and tuning files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/sysctl.d/99-hardening.conf
+        - /etc/sysctl.d/98-sysops-swap.conf
+        - /etc/modprobe.d/99-hardening-blacklist.conf
+        - /etc/security/limits.d/99-hardening-core.conf
+        - /etc/systemd/journald.conf.d/99-sysops.conf
+        - /etc/motd
+        - "{{ base_swap_path | default('/swapfile') }}"
+
+    - name: Reload sysctl without the hardening overrides
+      ansible.builtin.command: sysctl --system
+      failed_when: false
+      changed_when: true
+
+    - name: Unmask services disabled at onboarding
+      ansible.builtin.command: "systemctl unmask {{ item }}"
+      loop: "{{ hardening_disable_services | default(['avahi-daemon', 'cups', 'rpcbind', 'bluetooth']) }}"
+      failed_when: false
+      changed_when: true
+
+    - name: Remove auditd
+      ansible.builtin.package:
+        name: "{{ 'audit' if ansible_os_family == 'RedHat' else 'auditd' }}"
+        state: absent
 
 # --- Managed users ----------------------------------------------------------------
 - name: Remove managed users
@@ -199,7 +244,7 @@
       Ansible access retained (set decommission_revoke_ansible_access=true to revoke).
       {% endif %}
       Remove the machine from the Tailscale admin console and from the
-      inventory (scripts and hosts.yml) to complete offboarding.
+      inventory/Semaphore to complete offboarding.
 
 - name: Revoke the connecting user's authorized_keys (FINAL — host unreachable after this)
   ansible.builtin.file:

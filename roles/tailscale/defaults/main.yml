@@ -3,7 +3,7 @@ tailscale_enabled: true
 
 # Auth key from https://login.tailscale.com/admin/settings/keys
 # (use a reusable, pre-authorized key for fleet onboarding).
-# Provide via -e or a vaulted var file; never commit it in plain text.
+# Provide via Semaphore secret variable or -e; never commit it.
 tailscale_authkey: ""
 
 tailscale_hostname: "{{ inventory_hostname }}"

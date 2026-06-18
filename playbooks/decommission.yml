@@ -7,10 +7,14 @@
 #
 #   ansible-playbook playbooks/decommission.yml -l web-01 -e decommission_confirm=WIPE
 #
+# In Semaphore, expose decommission_confirm as a required survey variable so
+# the operator must type WIPE on every run.
+#
 # What it removes/reverts (each step has its own toggle, see role defaults):
-#   - dn42 router stack (if the node is in the 'dn42' group)
+#   - Optional components first: auto-peering API, dn42 stack, dashboard
 #   - Tailscale: logout, uninstall, state + repo files
 #   - Security: SSH hardening drop-in, fail2ban, firewall rules
+#   - Hardening: sysctls, module blacklist, swap, MOTD, auditd
 #   - Managed users and their sudoers entries
 #   - Base packages installed at onboarding
 #   - Logs, shell histories, login records
@@ -21,7 +25,8 @@
   hosts: "{{ target_hosts | default('retiring') }}"
   become: true
   pre_tasks:
-    # The decommission role enforces the WIPE gate too, but this runs first.
+    # The decommission role enforces the WIPE gate too, but this runs first
+    # so the optional-component teardowns below are also gated.
     - name: "SAFETY GATE — require explicit confirmation"
       ansible.builtin.assert:
         that:

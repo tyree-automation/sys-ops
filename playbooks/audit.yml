@@ -1,7 +1,7 @@
 ---
 # ===========================================================================
 # AUDIT — read-only fleet health check. Safe to run any time; good first
-# cron job to verify connectivity and credentials.
+# Semaphore template to verify connectivity and credentials.
 # ===========================================================================
 - name: Fleet audit (read-only)
   hosts: "{{ target_hosts | default('all') }}"

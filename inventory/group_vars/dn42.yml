@@ -7,7 +7,8 @@
 #   https://dn42.dev/howto/Getting-Started
 #
 # Per-node addressing (dn42_ownip / dn42_ownip6 / dn42_link_local6) is set
-# by scripts/new-node.py in host_vars/<node>.yml.
+# in inventory/host_vars/<node>.yml (scripts/add-server.py writes a stub
+# for nodes added with the dn42 component).
 # No peers are defined here — peerings are per node, see
 # roles/dn42/defaults/main.yml for the dn42_peers schema.
 # =============================================================================

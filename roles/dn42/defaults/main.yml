@@ -3,7 +3,8 @@
 # dn42 router component: WireGuard tunnels + BIRD2 + ROA sync.
 #
 # Network identity (ASN, prefixes) lives in inventory/group_vars/dn42.yml.
-# Per-node addressing is written by scripts/new-node.py into host_vars.
+# Per-node addressing lives in inventory/host_vars/<node>.yml (add-server.py
+# writes a stub when a node joins the dn42 component).
 # =============================================================================
 
 # --- Per-node addressing (set in host_vars/<node>.yml) ----------------------

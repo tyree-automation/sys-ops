@@ -39,7 +39,7 @@
       ansible.builtin.debug:
         msg: >-
           tailscale installed but not joined: set tailscale_authkey
-          (-e or a vaulted var file) and re-run, or run
+          (Semaphore secret variable or -e) and re-run, or run
           'tailscale up' manually on the host.
       when:
         - tailscale_authkey | length == 0

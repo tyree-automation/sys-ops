@@ -6,6 +6,13 @@ security_ssh_port: 22
 security_ssh_permit_root_login: "prohibit-password"
 # WARNING: only set "no" once key-based access is confirmed working.
 security_ssh_password_auth: "no"
+# Forwarding is rarely needed on managed servers; flip per-host if you
+# tunnel through one (e.g. jump hosts need tcp forwarding "yes").
+security_ssh_allow_tcp_forwarding: "no"
+security_ssh_allow_agent_forwarding: "no"
+# Restrict key exchange/ciphers/MACs to modern algorithms (OpenSSH 7.4+).
+# Disable if ancient clients must connect.
+security_ssh_modern_crypto: true
 
 # fail2ban brute-force protection.
 security_fail2ban: true
