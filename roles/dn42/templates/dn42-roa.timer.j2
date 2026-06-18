@@ -1,0 +1,11 @@
+# Managed by sys-ops (roles/dn42)
+[Unit]
+Description=Periodically update dn42 ROA tables
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ dn42_roa_refresh }}
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

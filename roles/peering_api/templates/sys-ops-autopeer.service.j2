@@ -1,0 +1,18 @@
+# Managed by sys-ops (roles/peering_api)
+[Unit]
+Description=sys-ops dn42 automatic peering API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/sbin/sys-ops-autopeer-api
+Restart=on-failure
+RestartSec=5
+# Needs root to manage WireGuard tunnels and BIRD config in auto-apply
+# mode; hardened as far as that allows.
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

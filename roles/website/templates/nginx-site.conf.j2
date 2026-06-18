@@ -1,0 +1,24 @@
+# Managed by sys-ops (roles/website) — do not edit.
+server {
+    listen {{ website_listen_port }};
+    listen [::]:{{ website_listen_port }};
+    server_name {{ website_server_name }};
+
+    root {{ website_root }};
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location /data/ {
+        add_header Cache-Control "no-cache";
+    }
+{% if 'autopeer' in group_names %}
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:{{ peering_api_port | default(8042) }};
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+{% endif %}
+}

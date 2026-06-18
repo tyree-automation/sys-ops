@@ -1,0 +1,15 @@
+{
+  "node": "{{ inventory_hostname }}",
+  "asn": {{ dn42_asn }},
+  "link_local6": "{{ dn42_link_local6 }}",
+  "endpoint": "{{ dn42_public_endpoint | default('') }}",
+  "port_base": {{ dn42_wg_port_base }},
+  "listen": "{{ peering_api_listen }}",
+  "port": {{ peering_api_port }},
+  "auto_apply": {{ peering_api_auto_apply | bool | to_json }},
+  "registry_check": {{ peering_api_registry_check | bool | to_json }},
+  "registry_api": "{{ peering_api_registry_api }}",
+  "asn_min": {{ peering_api_asn_min }},
+  "asn_max": {{ peering_api_asn_max }},
+  "max_open_requests": {{ peering_api_max_open_requests }}
+}

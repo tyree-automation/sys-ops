@@ -1,0 +1,47 @@
+---
+# =============================================================================
+# dn42 router component: WireGuard tunnels + BIRD2 + ROA sync.
+#
+# Network identity (ASN, prefixes) lives in inventory/group_vars/dn42.yml.
+# Per-node addressing lives in inventory/host_vars/<node>.yml (add-server.py
+# writes a stub when a node joins the dn42 component).
+# =============================================================================
+
+# --- Per-node addressing (set in host_vars/<node>.yml) ----------------------
+# This node's dn42 IPv4/IPv6 from your registered prefixes:
+dn42_ownip: ""                # e.g. 172.20.0.1
+dn42_ownip6: ""               # e.g. fd00:0000:0000::1
+# Link-local address used on tunnel interfaces (any fe80:: you pick):
+dn42_link_local6: "fe80::42"
+
+# --- Peerings (set in host_vars/<node>.yml) ----------------------------------
+# One entry per peering. Example:
+#
+# dn42_peers:
+#   - name: example             # short name; interface becomes dn42-example
+#     asn: 4242421234           # peer's ASN
+#     wg_pubkey: "AAAA...="     # peer's WireGuard public key
+#     wg_endpoint: "peer.example.com:51820"   # omit for passive peers
+#     peer_v6: "fe80::1234"     # peer's tunnel IPv6 (link-local preferred)
+#     peer_v4: ""               # peer's tunnel IPv4 (optional)
+#     wg_listen_port: 21234     # optional; default base + (asn % 10000)
+#     mp_bgp: true              # one MP-BGP session over IPv6 w/ extended
+#                               # next hop (default). false = classic split
+#                               # v4-over-v4 + v6-over-v6 sessions.
+dn42_peers: []
+
+# --- BIRD ---------------------------------------------------------------------
+dn42_bird_log_file: /var/log/bird.log
+# Accept default-route announcements from peers? Almost always no.
+dn42_accept_default_route: false
+
+# --- ROA (route origin validation) ---------------------------------------------
+# Routes failing ROA are rejected. Tables are refreshed by a systemd timer.
+dn42_roa_enabled: true
+dn42_roa_url4: "https://dn42.burble.com/roa/dn42_roa_bird2_4.conf"
+dn42_roa_url6: "https://dn42.burble.com/roa/dn42_roa_bird2_6.conf"
+dn42_roa_refresh: "15min"
+
+# --- Firewall -------------------------------------------------------------------
+# Open the WireGuard listen ports in UFW (matches the security role's firewall).
+dn42_manage_firewall: "{{ security_firewall | default(true) }}"

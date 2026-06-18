@@ -1,0 +1,21 @@
+# Managed by sys-ops (roles/dn42) — do not edit, changes will be overwritten.
+# Peer: {{ peer.name }} (AS{{ peer.asn }})
+[Interface]
+PrivateKey = {{ dn42_wg_privkey }}
+ListenPort = {{ peer.wg_listen_port | default(dn42_wg_port_base | int + (peer.asn | int % 10000)) }}
+{% if peer.wg_mtu is defined %}
+MTU = {{ peer.wg_mtu }}
+{% endif %}
+Address = {{ dn42_link_local6 }}/64
+{% if peer.peer_v4 | default('') | length > 0 %}
+PostUp = ip addr add {{ dn42_ownip }}/32 peer {{ peer.peer_v4 }}/32 dev %i
+{% endif %}
+Table = off
+
+[Peer]
+PublicKey = {{ peer.wg_pubkey }}
+{% if peer.wg_endpoint | default('') | length > 0 %}
+Endpoint = {{ peer.wg_endpoint }}
+PersistentKeepalive = 25
+{% endif %}
+AllowedIPs = 0.0.0.0/0, ::/0

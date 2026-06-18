@@ -72,6 +72,16 @@ ROLE_CLASSES = {
     "generic": "G",
 }
 
+# Optional component groups (turn on extra roles during onboard.yml). A node
+# joins these in ADDITION to its role group. autopeer requires dn42.
+COMPONENT_GROUPS = ("dn42", "autopeer", "website")
+# Lifecycle group(s) — never role groups.
+LIFECYCLE_GROUPS = ("retiring",)
+# Groups that are not a host's "role" group and are never pruned.
+SPECIAL_GROUPS = COMPONENT_GROUPS + LIFECYCLE_GROUPS
+
+HOST_VARS_DIR = os.path.join(REPO_ROOT, "inventory", "host_vars")
+
 CLLI_HELP = """\
   Host IDs follow a CLLI-style scheme — 11 characters encoding where and
   what the machine is:
@@ -108,13 +118,15 @@ def load_inventory(path):
     data["all"].setdefault("children", {})
     if data["all"]["children"] is None:
         data["all"]["children"] = {}
-    # The decommission queue group always exists.
+    # Component + lifecycle groups always exist so nodes can join them and
+    # they survive a rewrite even when empty.
     children = data["all"]["children"]
-    if children.get("retiring") is None:
-        children["retiring"] = {"hosts": {}}
-    children["retiring"].setdefault("hosts", {})
-    if children["retiring"]["hosts"] is None:
-        children["retiring"]["hosts"] = {}
+    for group in COMPONENT_GROUPS + LIFECYCLE_GROUPS:
+        if children.get(group) is None:
+            children[group] = {"hosts": {}}
+        children[group].setdefault("hosts", {})
+        if children[group]["hosts"] is None:
+            children[group]["hosts"] = {}
     return data
 
 
@@ -132,16 +144,37 @@ def iter_hosts(data):
             yield group, host_id, hvars or {}
 
 
-def find_host(data, host_id):
+def host_groups(data, host_id):
+    """Return (groups, entry) for a host: every group it belongs to and its
+    full var entry (which lives in exactly one group — its role group, or
+    'retiring' once retired)."""
+    groups = []
+    entry = {}
     for group, hid, hvars in iter_hosts(data):
         if hid == host_id:
-            return group, hvars
-    return None, None
+            groups.append(group)
+            if hvars:
+                entry = hvars
+    return groups, entry
+
+
+def role_group_of(groups):
+    """The host's role group: the first that isn't a component/lifecycle group."""
+    for group in groups:
+        if group not in SPECIAL_GROUPS:
+            return group
+    return groups[0] if groups else None
+
+
+def remove_host_everywhere(data, host_id):
+    for group in list((data["all"]["children"] or {})):
+        hosts = (data["all"]["children"][group] or {}).get("hosts") or {}
+        hosts.pop(host_id, None)
 
 
 def prune_empty_group(data, group):
-    """Drop a group that no longer has hosts, vars or children ('retiring' stays)."""
-    if group == "retiring":
+    """Drop a now-empty role group. Component/lifecycle groups always stay."""
+    if group in SPECIAL_GROUPS:
         return
     gdata = data["all"]["children"].get(group) or {}
     if not (gdata.get("hosts") or {}) and not gdata.get("vars") and not gdata.get("children"):
@@ -245,6 +278,39 @@ def make_asset_tag(clli, address):
     return f"SYS-{digest[:6].upper()}"
 
 
+def parse_components(raw):
+    """Parse a comma/space-separated component list; autopeer implies dn42.
+    Returns (ordered_list, error_message)."""
+    items = [c.strip().lower() for c in re.split(r"[ ,]+", raw or "") if c.strip()]
+    bad = [c for c in items if c not in COMPONENT_GROUPS]
+    if bad:
+        return None, (f"unknown component(s): {', '.join(bad)} "
+                      f"(choose from {', '.join(COMPONENT_GROUPS)})")
+    if "autopeer" in items and "dn42" not in items:
+        items.append("dn42")   # the peering API needs the dn42 stack
+    return [c for c in COMPONENT_GROUPS if c in items], None
+
+
+def write_dn42_host_vars_stub(host_id):
+    """Create inventory/host_vars/<host_id>.yml with dn42 placeholders so the
+    operator only has to fill in addressing + peers. Never overwrites."""
+    path = os.path.join(HOST_VARS_DIR, f"{host_id}.yml")
+    if os.path.exists(path):
+        return None
+    os.makedirs(HOST_VARS_DIR, exist_ok=True)
+    with open(path, "w") as f:
+        f.write(
+            f"# Per-node dn42 settings for {host_id}.\n"
+            "# Network identity (ASN, prefixes) is in inventory/group_vars/dn42.yml.\n"
+            "---\n"
+            "dn42_ownip: \"\"        # this node's dn42 IPv4, e.g. 172.20.0.1\n"
+            "dn42_ownip6: \"\"       # this node's dn42 IPv6, e.g. fd00::1\n"
+            "# dn42_public_endpoint: \"host:port\"   # advertised to peers (optional)\n"
+            "dn42_peers: []\n"
+        )
+    return path
+
+
 def build_entry(args):
     entry = {
         "ansible_host": args.address,
@@ -312,6 +378,11 @@ def cmd_add(args):
         args.address = args.address or ask("Address (IP or FQDN)", validator=address_validator)
         args.user = args.user or ask("SSH user", default="root")
         args.port = args.port or ask("SSH port", default="22", validator=port_validator)
+        if args.components is None:
+            args.components = ask(
+                f"Optional components ({'/'.join(COMPONENT_GROUPS)}, comma-separated)",
+                default="",
+            )
     else:
         missing = [f for f in ("name", "place", "region", "address") if not getattr(args, f)]
         if missing:
@@ -343,9 +414,14 @@ def cmd_add(args):
     else:
         args.host_id = args.host_id or args.clli.lower()
 
-    existing_group, _ = find_host(data, args.host_id)
-    if existing_group:
-        sys.exit(f"error: host '{args.host_id}' already exists in group '{existing_group}'")
+    existing_groups, _ = host_groups(data, args.host_id)
+    if existing_groups:
+        sys.exit(f"error: host '{args.host_id}' already exists in group(s): "
+                 f"{', '.join(existing_groups)}")
+
+    components, err = parse_components(args.components)
+    if err:
+        sys.exit(f"error: components: {err}")
 
     entry = build_entry(args)
 
@@ -357,18 +433,30 @@ def cmd_add(args):
   Address:    {entry['ansible_host']} (ssh {args.user}@:{args.port})
   Asset tag:  {entry['asset_tag']}
   Tailscale:  {entry['tailscale_hostname']}
+  Components: {', '.join(components) if components else '(none)'}
 """)
     if interactive and not confirm("Add to inventory?", default=True):
         sys.exit("aborted — nothing written")
 
     children = data["all"]["children"]
+    # Full var entry lives in the role group...
     group = children.setdefault(args.role, {}) or {}
     children[args.role] = group
     hosts = group.setdefault("hosts", {}) or {}
     group["hosts"] = hosts
     hosts[args.host_id] = entry
+    # ...and the host joins each component group as a bare membership.
+    for component in components:
+        chosts = children[component].setdefault("hosts", {}) or {}
+        children[component]["hosts"] = chosts
+        chosts[args.host_id] = None
     save_inventory(args.inventory, data)
     print(f"  ✓ {args.host_id} added to {os.path.relpath(args.inventory, os.getcwd())}")
+    if "dn42" in components:
+        stub = write_dn42_host_vars_stub(args.host_id)
+        if stub:
+            print(f"  ✓ wrote dn42 host_vars stub {os.path.relpath(stub, os.getcwd())} "
+                  "— fill in dn42_ownip / dn42_peers before onboarding")
 
     committed = False
     if args.commit or (
@@ -391,37 +479,43 @@ def cmd_add(args):
 
 def cmd_list(args):
     data = load_inventory(args.inventory)
-    rows = []
+    seen = {}
     for group, host_id, h in iter_hosts(data):
-        clli = str(h.get("clli", "-"))
-        location = (
-            f"{clli[0:4]}/{clli[4:6]}/{clli[6:8]}" if len(clli) == 11 else "-"
-        )
-        rows.append(
-            (host_id, group, h.get("ansible_host", "?"), location,
-             h.get("server_env", "-"), h.get("asset_tag", "-"), h.get("added_on", "-"))
-        )
-    if not rows:
+        rec = seen.setdefault(host_id, {"groups": [], "entry": {}})
+        rec["groups"].append(group)
+        if h:
+            rec["entry"] = h
+    if not seen:
         print("inventory is empty — run scripts/add-server.py to add a server")
         return
-    fmt = "{:<14} {:<12} {:<18} {:<13} {:<9} {:<12} {}"
-    print(fmt.format("HOST ID", "GROUP", "ADDRESS", "PLACE/RGN/ST", "ENV", "ASSET TAG", "ADDED"))
-    for row in sorted(rows):
-        print(fmt.format(*row))
+    fmt = "{:<14} {:<10} {:<16} {:<13} {:<8} {:<11} {}"
+    print(fmt.format("HOST ID", "GROUP", "ADDRESS", "PLACE/RGN/ST", "ENV",
+                     "ASSET TAG", "COMPONENTS"))
+    for host_id in sorted(seen):
+        rec = seen[host_id]
+        h = rec["entry"]
+        clli = str(h.get("clli", "-"))
+        location = f"{clli[0:4]}/{clli[4:6]}/{clli[6:8]}" if len(clli) == 11 else "-"
+        comps = [g for g in rec["groups"] if g in COMPONENT_GROUPS]
+        print(fmt.format(
+            host_id, role_group_of(rec["groups"]) or "-",
+            h.get("ansible_host", "?"), location, h.get("server_env", "-"),
+            h.get("asset_tag", "-"), ",".join(comps) if comps else "-"))
 
 
 def cmd_retire(args):
     data = load_inventory(args.inventory)
-    group, hvars = find_host(data, args.host_id)
-    if group is None:
+    groups, entry = host_groups(data, args.host_id)
+    if not groups:
         sys.exit(f"error: host '{args.host_id}' not found")
-    if group == "retiring":
+    if "retiring" in groups:
         sys.exit(f"'{args.host_id}' is already retiring")
-    del data["all"]["children"][group]["hosts"][args.host_id]
-    data["all"]["children"]["retiring"]["hosts"][args.host_id] = hvars
-    prune_empty_group(data, group)
+    role = role_group_of(groups)
+    remove_host_everywhere(data, args.host_id)
+    data["all"]["children"]["retiring"]["hosts"][args.host_id] = entry
+    prune_empty_group(data, role)
     save_inventory(args.inventory, data)
-    print(f"  ✓ {args.host_id} moved from '{group}' to 'retiring'")
+    print(f"  ✓ {args.host_id} moved from '{role}' to 'retiring'")
     print(f"  Next step: ansible-playbook playbooks/decommission.yml -l {args.host_id} \\")
     print("               -e decommission_confirm=WIPE")
     print(f"  After teardown: scripts/add-server.py remove {args.host_id}")
@@ -429,15 +523,21 @@ def cmd_retire(args):
 
 def cmd_remove(args):
     data = load_inventory(args.inventory)
-    group, _ = find_host(data, args.host_id)
-    if group is None:
+    groups, _ = host_groups(data, args.host_id)
+    if not groups:
         sys.exit(f"error: host '{args.host_id}' not found")
-    if group != "retiring" and sys.stdin.isatty():
-        if not confirm(f"'{args.host_id}' is in '{group}', not 'retiring' — remove anyway?"):
+    if "retiring" not in groups and sys.stdin.isatty():
+        if not confirm(f"'{args.host_id}' is in {', '.join(groups)}, not 'retiring' "
+                       "— remove anyway?"):
             sys.exit("aborted")
-    del data["all"]["children"][group]["hosts"][args.host_id]
-    prune_empty_group(data, group)
+    role = role_group_of(groups)
+    remove_host_everywhere(data, args.host_id)
+    prune_empty_group(data, role)
     save_inventory(args.inventory, data)
+    stub = os.path.join(HOST_VARS_DIR, f"{args.host_id}.yml")
+    if os.path.exists(stub):
+        os.remove(stub)
+        print(f"  ✓ removed host_vars {os.path.relpath(stub, os.getcwd())}")
     print(f"  ✓ {args.host_id} removed from inventory")
     print("  Also remove the machine from the Tailscale admin console and Semaphore.")
 
@@ -454,7 +554,7 @@ def main():
     parser.set_defaults(
         name=None, place=None, region=None, site=None, seq=None, env=None,
         role=None, address=None, user=None, port=None, host_id=None,
-        yes=False, commit=False, onboard=False,
+        components=None, yes=False, commit=False, onboard=False,
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -470,6 +570,8 @@ def main():
     p_add.add_argument("--user", help="SSH user (default: root)")
     p_add.add_argument("--port", help="SSH port (default: 22)")
     p_add.add_argument("--host-id", help="override the generated host ID")
+    p_add.add_argument("--components",
+                       help=f"optional components, comma-separated: {', '.join(COMPONENT_GROUPS)}")
     p_add.add_argument("--yes", action="store_true", help="no prompts; fail on missing options")
     p_add.add_argument("--commit", action="store_true", help="git commit+push the inventory")
     p_add.add_argument("--onboard", action="store_true", help="run onboard.yml after adding")

@@ -1,0 +1,42 @@
+---
+- name: Ensure /etc/wireguard exists
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    mode: "0700"
+
+- name: Generate WireGuard private key
+  ansible.builtin.shell: |
+    set -o pipefail
+    umask 077
+    wg genkey > /etc/wireguard/dn42-privatekey
+  args:
+    creates: /etc/wireguard/dn42-privatekey
+    executable: /bin/bash
+
+- name: Derive WireGuard public key
+  ansible.builtin.shell: |
+    set -o pipefail
+    wg pubkey < /etc/wireguard/dn42-privatekey > /etc/wireguard/dn42-publickey
+  args:
+    creates: /etc/wireguard/dn42-publickey
+    executable: /bin/bash
+
+- name: Read keys
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - /etc/wireguard/dn42-privatekey
+    - /etc/wireguard/dn42-publickey
+  register: _dn42_keys
+  no_log: true
+
+- name: Stash keys for templating
+  ansible.builtin.set_fact:
+    dn42_wg_privkey: "{{ _dn42_keys.results[0].content | b64decode | trim }}"
+    dn42_wg_pubkey: "{{ _dn42_keys.results[1].content | b64decode | trim }}"
+  no_log: true
+
+- name: Show this node's WireGuard public key (share it with peers)
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} dn42 WireGuard public key: {{ dn42_wg_pubkey }}"

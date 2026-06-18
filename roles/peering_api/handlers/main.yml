@@ -1,0 +1,6 @@
+---
+- name: Restart autopeer API
+  ansible.builtin.systemd_service:
+    name: sys-ops-autopeer
+    state: restarted
+    daemon_reload: true

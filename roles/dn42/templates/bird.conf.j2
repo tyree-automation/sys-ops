@@ -1,0 +1,208 @@
+{# =========================================================================
+   BIRD2 dn42 router config. Based on the reference config from the dn42
+   wiki (https://dn42.dev/howto/Bird2), parameterized for sys-ops.
+   ========================================================================= #}
+# Managed by sys-ops (roles/dn42) — do not edit, changes will be overwritten.
+
+log syslog all;
+router id {{ dn42_ownip }};
+
+define OWNAS = {{ dn42_asn }};
+define OWNIP = {{ dn42_ownip }};
+define OWNIPv6 = {{ dn42_ownip6 }};
+
+function is_self_net() {
+  return net ~ [
+{% for net in dn42_ownnets4 %}
+    {{ net }}+{{ "," if not loop.last }}
+{% endfor %}
+  ];
+}
+
+function is_self_net_v6() {
+  return net ~ [
+{% for net in dn42_ownnets6 %}
+    {{ net }}+{{ "," if not loop.last }}
+{% endfor %}
+  ];
+}
+
+function is_valid_network() {
+  return net ~ [
+    172.20.0.0/14{21,29}, # dn42
+    172.20.0.0/24{28,32}, # dn42 Anycast
+    172.21.0.0/24{28,32}, # dn42 Anycast
+    172.22.0.0/24{28,32}, # dn42 Anycast
+    172.23.0.0/24{28,32}, # dn42 Anycast
+    172.31.0.0/16+,       # ChaosVPN
+    10.100.0.0/14+,       # ChaosVPN
+    10.127.0.0/16{16,32}, # neonetwork
+    10.0.0.0/8{15,24}     # Freifunk.net
+  ];
+}
+
+function is_valid_network_v6() {
+  return net ~ [
+    fd00::/8{44,64} # ULA address space as per RFC 4193
+  ];
+}
+
+{% if dn42_roa_enabled %}
+roa4 table dn42_roa;
+roa6 table dn42_roa_v6;
+
+protocol static {
+  roa4 { table dn42_roa; };
+  include "/etc/bird/roa_dn42_v4.conf";
+}
+
+protocol static {
+  roa6 { table dn42_roa_v6; };
+  include "/etc/bird/roa_dn42_v6.conf";
+}
+{% endif %}
+
+protocol device {
+  scan time 10;
+}
+
+protocol kernel {
+  scan time 20;
+  ipv4 {
+    import none;
+    export filter {
+      if source = RTS_STATIC then reject;
+      krt_prefsrc = OWNIP;
+      accept;
+    };
+  };
+}
+
+protocol kernel {
+  scan time 20;
+  ipv6 {
+    import none;
+    export filter {
+      if source = RTS_STATIC then reject;
+      krt_prefsrc = OWNIPv6;
+      accept;
+    };
+  };
+}
+
+protocol static {
+{% for net in dn42_ownnets4 %}
+  route {{ net }} reject;
+{% endfor %}
+  ipv4 {
+    import all;
+    export none;
+  };
+}
+
+protocol static {
+{% for net in dn42_ownnets6 %}
+  route {{ net }} reject;
+{% endfor %}
+  ipv6 {
+    import all;
+    export none;
+  };
+}
+
+filter dn42_import4 {
+  if !(is_valid_network() && !is_self_net()) then reject;
+{% if not dn42_accept_default_route %}
+  if net = 0.0.0.0/0 then reject;
+{% endif %}
+{% if dn42_roa_enabled %}
+  if (roa_check(dn42_roa, net, bgp_path.last) != ROA_VALID) then {
+    print "[dn42] ROA check failed for ", net, " ASN ", bgp_path.last;
+    reject;
+  }
+{% endif %}
+  accept;
+}
+
+filter dn42_import6 {
+  if !(is_valid_network_v6() && !is_self_net_v6()) then reject;
+{% if not dn42_accept_default_route %}
+  if net = ::/0 then reject;
+{% endif %}
+{% if dn42_roa_enabled %}
+  if (roa_check(dn42_roa_v6, net, bgp_path.last) != ROA_VALID) then {
+    print "[dn42] ROA check failed for ", net, " ASN ", bgp_path.last;
+    reject;
+  }
+{% endif %}
+  accept;
+}
+
+filter dn42_export4 {
+  if is_valid_network() && source ~ [RTS_STATIC, RTS_BGP] then accept;
+  reject;
+}
+
+filter dn42_export6 {
+  if is_valid_network_v6() && source ~ [RTS_STATIC, RTS_BGP] then accept;
+  reject;
+}
+
+template bgp dnpeers {
+  local as OWNAS;
+  path metric 1;
+
+  ipv4 {
+    import filter dn42_import4;
+    export filter dn42_export4;
+    import limit 9000 action block;
+  };
+
+  ipv6 {
+    import filter dn42_import6;
+    export filter dn42_export6;
+    import limit 9000 action block;
+  };
+}
+
+# Sessions added by the automatic peering API (roles/peering_api) land
+# here; import them with scripts/peering-requests.py to make them managed.
+include "/etc/bird/peers/*.conf";
+
+# --- Peerings (from dn42_peers in host_vars) --------------------------------
+{% for peer in dn42_peers %}
+{% set ifname = 'dn42-' + peer.name %}
+{% set proto = peer.name | regex_replace('[^A-Za-z0-9_]', '_') %}
+{% set v6scope = " % '" + ifname + "'" if (peer.peer_v6 | default('')).startswith('fe80') else '' %}
+{% if peer.mp_bgp | default(true) %}
+protocol bgp dn42_{{ proto }} from dnpeers {
+  neighbor {{ peer.peer_v6 }}{{ v6scope }} as {{ peer.asn }};
+  ipv4 {
+    extended next hop on;
+  };
+}
+{% else %}
+{% if peer.peer_v4 | default('') | length > 0 %}
+protocol bgp dn42_{{ proto }}_v4 from dnpeers {
+  neighbor {{ peer.peer_v4 }} as {{ peer.asn }};
+  ipv6 {
+    import none;
+    export none;
+  };
+}
+{% endif %}
+{% if peer.peer_v6 | default('') | length > 0 %}
+protocol bgp dn42_{{ proto }}_v6 from dnpeers {
+  neighbor {{ peer.peer_v6 }}{{ v6scope }} as {{ peer.asn }};
+  ipv4 {
+    import none;
+    export none;
+  };
+}
+{% endif %}
+{% endif %}
+
+{% else %}
+# (no peers configured yet — add dn42_peers entries in
+#  inventory/host_vars/{{ inventory_hostname }}.yml and re-run)
+{% endfor %}

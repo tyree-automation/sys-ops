@@ -2,7 +2,10 @@
 # ===========================================================================
 # ONBOARD — take a freshly imaged machine to "ready for service life".
 #
-#   ansible-playbook playbooks/onboard.yml -l web-01
+#   ansible-playbook playbooks/onboard.yml -l <node>
+#
+# Register the node first with scripts/add-server.py — it writes the
+# CLLI inventory entry and offers to run this playbook for you.
 #
 # What it does, in order:
 #   1. base        — hostname, packages, MOTD, journald, swap, auto-upgrades
@@ -10,8 +13,12 @@
 #   3. users       — managed users, SSH keys, sudo
 #   4. security    — SSH hardening, fail2ban, firewall
 #   5. hardening   — sysctls, module blacklist, core dumps, services, auditd
-#   6. tailscale   — install + join the tailnet (needs tailscale_authkey)
-#   7. maintenance — full system update so it enters service current
+#   6. tailscale   — OPTIONAL: join the tailnet (tailscale_enabled)
+#   7. dn42        — OPTIONAL: dn42 router stack (node in the 'dn42' group)
+#   8. peering_api — OPTIONAL: auto-peering API (node in the 'autopeer' group)
+#   9. website     — OPTIONAL: fleet dashboard (node in the 'website' group;
+#                    run scripts/build-site.py before onboarding)
+#  10. maintenance — full system update so it enters service current
 # ===========================================================================
 - name: Onboard server for service life
   hosts: "{{ target_hosts | default('all') }}"
@@ -22,7 +29,14 @@
     - users
     - security
     - hardening
-    - tailscale
+    - role: tailscale
+      when: tailscale_enabled | bool
+    - role: dn42
+      when: "'dn42' in group_names"
+    - role: peering_api
+      when: "'autopeer' in group_names"
+    - role: website
+      when: "'website' in group_names"
     - maintenance
 
   post_tasks:
@@ -33,4 +47,6 @@
           {{ ansible_distribution }} {{ ansible_distribution_version }},
           kernel {{ ansible_kernel }},
           timezone {{ time_timezone }},
-          tailscale {{ 'joined' if (tailscale_enabled | bool) else 'disabled' }}.
+          components: tailscale={{ 'on' if (tailscale_enabled | bool) else 'off' }},
+          dn42={{ 'on' if 'dn42' in group_names else 'off' }},
+          website={{ 'on' if 'website' in group_names else 'off' }}.

@@ -1,0 +1,43 @@
+---
+# The security role manages the host firewall (ufw on Debian-family hosts,
+# which is the only family the dn42 role supports). Open each tunnel's
+# WireGuard listen port and trust traffic on dn42-* interfaces.
+
+- name: Check whether ufw is present
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: _dn42_ufw
+
+- name: Open WireGuard ports and trust tunnel interfaces
+  when: _dn42_ufw.stat.exists
+  block:
+    - name: Allow WireGuard listen ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ peer.wg_listen_port | default(dn42_wg_port_base | int + (peer.asn | int % 10000)) | string }}"
+        proto: udp
+        comment: "dn42 wg {{ peer.name }}"
+      loop: "{{ dn42_peers }}"
+      loop_control:
+        loop_var: peer
+        label: "{{ peer.name }}"
+
+    - name: Allow traffic in on dn42 tunnel interfaces
+      community.general.ufw:
+        rule: allow
+        interface: "dn42-{{ peer.name }}"
+        direction: in
+      loop: "{{ dn42_peers }}"
+      loop_control:
+        loop_var: peer
+        label: "{{ peer.name }}"
+
+    - name: Allow routed traffic between dn42 tunnel interfaces
+      community.general.ufw:
+        rule: allow
+        route: true
+        interface_in: "dn42-{{ peer.name }}"
+      loop: "{{ dn42_peers }}"
+      loop_control:
+        loop_var: peer
+        label: "{{ peer.name }}"

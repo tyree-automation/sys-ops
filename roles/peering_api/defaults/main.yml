@@ -1,0 +1,27 @@
+---
+# Automatic peering API for dn42 nodes (the 'autopeer' component group).
+# Requires the dn42 role on the same node.
+
+peering_api_listen: "0.0.0.0"
+peering_api_port: 8042
+
+# Apply valid requests immediately (tunnel + BGP session) instead of
+# queueing them for review with scripts/peering-requests.py.
+# NOTE: the registry check only verifies the ASN exists in the dn42
+# registry — it does NOT prove the requester owns it. Leave this off
+# unless you accept that risk on (e.g.) a test node.
+peering_api_auto_apply: false
+
+# Check requested ASNs against a dn42 registry explorer (best effort).
+peering_api_registry_check: true
+peering_api_registry_api: "https://explorer.burble.com/api/registry"
+
+# Accepted ASN range (dn42 space).
+peering_api_asn_min: 4242420000
+peering_api_asn_max: 4242429999
+
+peering_api_max_open_requests: 20
+
+# Open the API port in ufw. Disable if you only expose it through the
+# website role's /api/ proxy on the same node.
+peering_api_open_port: true

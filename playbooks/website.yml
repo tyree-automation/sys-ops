@@ -1,0 +1,39 @@
+---
+# ===========================================================================
+# WEBSITE — deploy the fleet dashboard to nodes in the 'website' group.
+#
+# Build the dataset first (reads inventory + site.yml):
+#   scripts/build-site.py            # add --probe to record node status
+# Preview locally:
+#   scripts/build-site.py --serve    # http://localhost:8080
+# Deploy:
+#   ansible-playbook playbooks/website.yml
+#
+# Remove the dashboard from a node:
+#   ansible-playbook playbooks/website.yml -l <node> \
+#       -e website_state=absent -e decommission_confirm=WIPE
+# ===========================================================================
+- name: Deploy fleet dashboard
+  hosts: "{{ target_hosts | default('website') }}"
+  become: true
+  tasks:
+    - name: Deploy dashboard
+      ansible.builtin.include_role:
+        name: website
+      when: website_state | default('present') != 'absent'
+
+    - name: Remove dashboard
+      when: website_state | default('present') == 'absent'
+      block:
+        - name: "SAFETY GATE — require explicit confirmation"
+          ansible.builtin.assert:
+            that:
+              - decommission_confirm | default('') == "WIPE"
+            fail_msg: >-
+              Refusing to remove the dashboard from {{ inventory_hostname }}.
+              Re-run with -e decommission_confirm=WIPE to proceed.
+
+        - name: Tear down dashboard
+          ansible.builtin.include_role:
+            name: website
+            tasks_from: teardown

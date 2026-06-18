@@ -1,0 +1,73 @@
+---
+- name: Ensure /etc/bird exists
+  ansible.builtin.file:
+    path: /etc/bird
+    state: directory
+    owner: bird
+    group: bird
+    mode: "0755"
+
+- name: Seed empty ROA tables so bird.conf always parses
+  ansible.builtin.copy:
+    content: |
+      # Populated by dn42-roa.service
+    dest: "{{ item }}"
+    force: false
+    owner: bird
+    group: bird
+    mode: "0644"
+  loop:
+    - /etc/bird/roa_dn42_v4.conf
+    - /etc/bird/roa_dn42_v6.conf
+  when: dn42_roa_enabled | bool
+
+- name: Create dynamic peers directory
+  ansible.builtin.file:
+    path: /etc/bird/peers
+    state: directory
+    owner: bird
+    group: bird
+    mode: "0755"
+
+- name: Seed dynamic peers placeholder (bird's include glob must match)
+  ansible.builtin.copy:
+    content: |
+      # Reserved for sessions added by the automatic peering API.
+    dest: /etc/bird/peers/000-placeholder.conf
+    force: false
+    owner: bird
+    group: bird
+    mode: "0644"
+
+- name: Render bird.conf
+  ansible.builtin.template:
+    src: bird.conf.j2
+    dest: /etc/bird/bird.conf
+    owner: bird
+    group: bird
+    mode: "0640"
+    validate: "/usr/sbin/bird -p -c %s"
+  notify: Reload bird
+
+- name: Enable and start bird
+  ansible.builtin.systemd_service:
+    name: bird
+    enabled: true
+    state: started
+
+- name: Fetch ROA tables now
+  ansible.builtin.command: /usr/local/sbin/dn42-update-roas
+  when: dn42_roa_enabled | bool
+  register: _dn42_roa_run
+  changed_when: true
+  failed_when: false
+
+- name: Warn if the initial ROA fetch failed
+  ansible.builtin.debug:
+    msg: >-
+      ROA fetch failed ({{ _dn42_roa_run.stderr | default('') | trim }}).
+      The dn42-roa.timer will retry; until it succeeds all peer routes
+      fail ROA validation and are rejected.
+  when:
+    - dn42_roa_enabled | bool
+    - _dn42_roa_run.rc != 0

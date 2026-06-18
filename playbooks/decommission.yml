@@ -11,8 +11,10 @@
 # the operator must type WIPE on every run.
 #
 # What it removes/reverts (each step has its own toggle, see role defaults):
+#   - Optional components first: auto-peering API, dn42 stack, dashboard
 #   - Tailscale: logout, uninstall, state + repo files
 #   - Security: SSH hardening drop-in, fail2ban, firewall rules
+#   - Hardening: sysctls, module blacklist, swap, MOTD, auditd
 #   - Managed users and their sudoers entries
 #   - Base packages installed at onboarding
 #   - Logs, shell histories, login records
@@ -22,5 +24,33 @@
 - name: Decommission server to factory default
   hosts: "{{ target_hosts | default('retiring') }}"
   become: true
+  pre_tasks:
+    # The decommission role enforces the WIPE gate too, but this runs first
+    # so the optional-component teardowns below are also gated.
+    - name: "SAFETY GATE — require explicit confirmation"
+      ansible.builtin.assert:
+        that:
+          - decommission_confirm | default('') == "WIPE"
+        fail_msg: >-
+          Refusing to decommission {{ inventory_hostname }}.
+          Re-run with -e decommission_confirm=WIPE to proceed.
+
+    - name: Remove automatic peering API before base teardown
+      ansible.builtin.include_role:
+        name: peering_api
+        tasks_from: teardown
+      when: "'autopeer' in group_names"
+
+    - name: Remove dn42 stack before base teardown
+      ansible.builtin.include_role:
+        name: dn42
+        tasks_from: teardown
+      when: "'dn42' in group_names"
+
+    - name: Remove fleet dashboard before base teardown
+      ansible.builtin.include_role:
+        name: website
+        tasks_from: teardown
+      when: "'website' in group_names"
   roles:
     - decommission

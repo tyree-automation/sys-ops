@@ -1,0 +1,60 @@
+# =============================================================================
+# Fleet dashboard customization — read by scripts/build-site.py.
+# Rebuild after changes:  scripts/build-site.py   (then redeploy with
+# ansible-playbook playbooks/website.yml, or preview with --serve)
+# =============================================================================
+
+# --- Branding ----------------------------------------------------------------
+title: "sys-ops"
+subtitle: "fleet operations"
+# Tagline shown under the title on the dashboard header.
+tagline: "test · development · production"
+# Accent color (any CSS color). Viewers can still override it live in the UI.
+accent: "#7c5cff"
+# Footer line (HTML allowed). {generated} expands to the build timestamp.
+footer: "generated {generated} · powered by sys-ops"
+
+# --- Visibility ----------------------------------------------------------------
+# scripts/build-site.py always produces two datasets:
+#   build/fleet-internal.json — the full fleet (environments, components,
+#                               SSH addresses, ops commands)
+#   build/fleet-public.json   — dn42 routers ONLY: name, location, status,
+#                               dn42 addressing and peerings. No fleet
+#                               internals, ever.
+# Each website node deploys exactly one of them via its website_mode host
+# var (default: public). Internal data never reaches a public host.
+
+# Show SSH addresses in the INTERNAL dataset's node drawer:
+show_addresses: true
+
+# --- Public peering info ----------------------------------------------------------
+# Shown as a "peer with me" card on the PUBLIC (dn42-only) site.
+# Leave values empty to hide them; leave all empty to hide the card.
+public:
+  asn: ""               # e.g. "AS4242420000"
+  contact: ""           # e.g. "you@example.com / yournick on hackint"
+  policy: ""            # e.g. "Open peering — pick the closest node and email me."
+
+# --- Map -----------------------------------------------------------------------
+map:
+  center: [25, 10]        # [lat, lon]
+  zoom: 2
+  # "dark" / "light" follow the UI theme using CARTO basemaps, or set a
+  # custom XYZ tile URL template.
+  tiles: auto
+  # Draw an animated full-mesh between your dn42 nodes:
+  mesh_links: true
+
+# --- Extra map links --------------------------------------------------------------
+# Custom links to draw besides the dn42 mesh, e.g. site-to-site tunnels.
+# from/to are node names; type colors the link (dn42 | vpn | custom).
+links: []
+#  - { from: web-01, to: lab-01, type: vpn, label: "wg site link" }
+
+# --- Panels ---------------------------------------------------------------------
+# Toggle dashboard sections.
+panels:
+  stats: true
+  map: true
+  nodes: true
+  dn42: true

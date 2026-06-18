@@ -1,0 +1,54 @@
+---
+# dn42 router component: WireGuard tunnels + BIRD2 + ROA sync.
+# Peers come from dn42_peers (host_vars); identity from group_vars/dn42.yml.
+
+- name: Preflight checks
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+      - dn42_asn | int != 4242420000
+      - dn42_ownip | length > 0
+      - dn42_ownip6 | length > 0
+      - dn42_peers | map(attribute='name') | map('length') | select('>', 10) | list | length == 0
+    fail_msg: >-
+      dn42 role needs a Debian-family host, your real ASN/prefixes in
+      inventory/group_vars/dn42.yml (currently the CHANGEME placeholders),
+      dn42_ownip/dn42_ownip6 in this node's host_vars, and peer names of
+      at most 10 characters (interface names are 'dn42-<name>').
+
+- name: Install dn42 router packages
+  ansible.builtin.apt:
+    name:
+      - bird2
+      - wireguard-tools
+      - curl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable IP forwarding
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    sysctl_file: /etc/sysctl.d/90-dn42.conf
+    reload: true
+  loop:
+    - net.ipv4.ip_forward
+    - net.ipv6.conf.all.forwarding
+
+- name: Generate WireGuard keys
+  ansible.builtin.include_tasks: keys.yml
+
+- name: Configure ROA sync
+  ansible.builtin.include_tasks: roa.yml
+  when: dn42_roa_enabled | bool
+
+- name: Configure WireGuard peer tunnels
+  ansible.builtin.include_tasks: wireguard.yml
+
+- name: Configure BIRD
+  ansible.builtin.include_tasks: bird.yml
+
+- name: Open firewall for WireGuard listen ports
+  ansible.builtin.include_tasks: firewall.yml
+  when: dn42_manage_firewall | bool

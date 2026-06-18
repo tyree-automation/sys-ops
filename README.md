@@ -101,6 +101,23 @@ gated behind a survey variable the operator must type (`WIPE`).
 A ready-to-run `docker-compose.yml` for the Semaphore server and the full
 wiring guide are in [`semaphore/SETUP.md`](semaphore/SETUP.md).
 
+## Optional components
+
+Beyond the base lifecycle, a node can opt into extra components by joining
+**component groups** (in addition to its role group). `add-server.py` asks
+which ones during onboarding (or pass `--components dn42,website,autopeer`),
+and `onboard.yml` turns on the matching role; `decommission.yml` tears them
+down first.
+
+| Component | Group | What it deploys |
+|---|---|---|
+| **dn42 router** | `dn42` | WireGuard tunnels + BIRD2 + ROA sync (`roles/dn42`). Network identity (ASN, prefixes) goes in `inventory/group_vars/dn42.yml`; per-node addressing and peers go in `inventory/host_vars/<node>.yml` (a stub is written automatically). Reconfigure with `playbooks/dn42.yml`. |
+| **Auto-peering API** | `autopeer` | HTTP API that accepts/queues dn42 peering requests (`roles/peering_api`). Requires `dn42` on the same node; review queued requests with `scripts/peering-requests.py`. |
+| **Fleet dashboard** | `website` | nginx serving the static dashboard in `web/` with an animated network map (`roles/website`). Build the dataset first with `scripts/build-site.py` (reads the inventory + `site.yml`); it emits a **public** dn42-only dataset and an **internal** full-fleet dataset, and each website node serves exactly one via its `website_mode` host var. |
+
+dn42 requires your own ASN and address space from the
+[dn42 registry](https://dn42.dev/howto/Getting-Started) before first use.
+
 ## Hardening
 
 Onboarding applies OS-agnostic hardening across both distro families, all
@@ -152,11 +169,16 @@ ansible.cfg               # sane defaults; inventory + roles paths
 requirements.yml          # ansible.posix, community.general
 scripts/
   add-server.py           # interactive add/list/retire/remove for the fleet
+  build-site.py           # build the dashboard dataset from the inventory
+  peering-requests.py     # review the auto-peering API's request queue
 inventory/
   hosts.yml               # the fleet — managed by add-server.py, committed
   group_vars/all.yml      # fleet-wide policy
+  group_vars/dn42.yml     # dn42 network identity (ASN, prefixes)
+  host_vars/<node>.yml    # per-node settings (e.g. dn42 addressing/peers)
 playbooks/
   audit.yml  onboard.yml  maintenance.yml  decommission.yml
+  dn42.yml  website.yml   # (re)configure optional components
 roles/
   base/          # hostname, packages, motd, journald, swap, unattended-upgrades
   time_sync/     # timezone + chrony NTP
@@ -166,6 +188,11 @@ roles/
   tailscale/     # install + join tailnet
   maintenance/   # updates, cleanup, reboot handling, health report
   decommission/  # full teardown to factory default
+  dn42/          # OPTIONAL: WireGuard + BIRD2 dn42 router + ROA sync
+  peering_api/   # OPTIONAL: automatic dn42 peering API
+  website/       # OPTIONAL: nginx fleet dashboard
+web/             # static dashboard assets (served by the website role)
+site.yml         # dashboard customization (read by build-site.py)
 semaphore/
   docker-compose.yml  .env.example  SETUP.md
 ```

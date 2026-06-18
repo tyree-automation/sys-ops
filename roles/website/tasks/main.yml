@@ -1,0 +1,103 @@
+---
+# Deploy the fleet dashboard. Build the dataset first on the control node:
+#   scripts/build-site.py [--probe]
+
+- name: Validate website_mode
+  ansible.builtin.assert:
+    that:
+      - website_mode in ['public', 'internal']
+    fail_msg: "website_mode must be 'public' or 'internal'"
+
+- name: Check that the dashboard dataset has been built
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../build/fleet-{{ website_mode }}.json"
+  delegate_to: localhost
+  become: false
+  register: _website_dataset
+
+- name: Fail if the dataset is missing
+  ansible.builtin.fail:
+    msg: "build/fleet-{{ website_mode }}.json not found — run scripts/build-site.py first."
+  when: not _website_dataset.stat.exists
+
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+
+- name: Create web root
+  ansible.builtin.file:
+    path: "{{ website_root }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Copy dashboard files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../web/"
+    dest: "{{ website_root }}/"
+    owner: www-data
+    group: www-data
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: Create data directory
+  ansible.builtin.file:
+    path: "{{ website_root }}/data"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+# Only the dataset matching website_mode ever leaves the control node —
+# a public host never receives the internal fleet data.
+- name: "Install the {{ website_mode }} dataset"
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../build/fleet-{{ website_mode }}.json"
+    dest: "{{ website_root }}/data/fleet.json"
+    owner: www-data
+    group: www-data
+    mode: "0644"
+
+- name: Install nginx site
+  ansible.builtin.template:
+    src: nginx-site.conf.j2
+    dest: /etc/nginx/sites-available/sys-ops-dashboard.conf
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable nginx site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/sys-ops-dashboard.conf
+    dest: /etc/nginx/sites-enabled/sys-ops-dashboard.conf
+    state: link
+  notify: Reload nginx
+
+- name: Disable the default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Enable and start nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Check whether ufw is present
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: _website_ufw
+  when: website_manage_firewall | bool
+
+- name: Allow the dashboard port
+  community.general.ufw:
+    rule: allow
+    port: "{{ website_listen_port | string }}"
+    proto: tcp
+    comment: sys-ops dashboard
+  when:
+    - website_manage_firewall | bool
+    - _website_ufw.stat.exists
